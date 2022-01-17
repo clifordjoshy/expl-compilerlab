@@ -1,0 +1,93 @@
+{
+module Tokens where
+}
+
+%wrapper "basic"
+
+@integer = [0-9]+
+@varName = [a-zA-Z_][a-zA-Z_0-9]*
+@string = \"(\\.|[^\"\\])*\"
+
+tokens :-
+
+  $white+         ;
+  @integer        { \s -> TokenIntVal (read s) }
+  @string         { \s -> TokenStrVal s }
+  \+              { \_ -> TokenPlus }
+  \-              { \_ -> TokenMinus }
+  \*              { \_ -> TokenTimes }
+  \/              { \_ -> TokenDiv }
+  \(              { \_ -> TokenLParen }
+  \)              { \_ -> TokenRParen }
+  \=              { \_ -> TokenAssign }
+  \<              { \_ -> TokenLt }
+  \>              { \_ -> TokenGt }
+  \<\=            { \_ -> TokenLtE }
+  \>\=            { \_ -> TokenGtE }
+  \!\=            { \_ -> TokenNE }
+  \=\=            { \_ -> TokenEq }
+  begin           { \_ -> TokenBegin }
+  end             { \_ -> TokenEnd }
+  read            { \_ -> TokenRead }
+  write           { \_ -> TokenWrite }
+  if              { \_ -> TokenIf }
+  then            { \_ -> TokenThen }
+  else            { \_ -> TokenElse }
+  endif           { \_ -> TokenEndif }
+  while           { \_ -> TokenWhile }
+  do              { \_ -> TokenDo }
+  break           { \_ -> TokenBreak }
+  continue        { \_ -> TokenCont }
+  endwhile        { \_ -> TokenEndwhile }
+  decl            { \_ -> TokenDecl }
+  enddecl         { \_ -> TokenEndDecl }
+  int             { \_ -> TokenInt }
+  str             { \_ -> TokenStr }
+  @varName        { \s -> TokenVar s }
+  \[              { \_ -> TokenLBox }
+  \]              { \_ -> TokenRBox }
+  \,              { \_ -> TokenComma }
+  \;              { \_ -> TokenStmtEnd }
+
+{
+
+data Token = TokenIntVal Int
+           | TokenStrVal String
+           | TokenVar String
+           | TokenPlus
+           | TokenMinus
+           | TokenTimes
+           | TokenDiv
+           | TokenLt
+           | TokenLtE
+           | TokenGt
+           | TokenGtE
+           | TokenEq
+           | TokenNE
+           | TokenLParen
+           | TokenRParen
+           | TokenAssign
+           | TokenBegin
+           | TokenEnd
+           | TokenRead
+           | TokenWrite
+           | TokenIf
+           | TokenThen
+           | TokenElse
+           | TokenEndif
+           | TokenWhile
+           | TokenDo
+           | TokenBreak
+           | TokenCont
+           | TokenEndwhile
+           | TokenStmtEnd
+           | TokenDecl
+           | TokenEndDecl
+           | TokenInt
+           | TokenStr
+           | TokenComma
+           deriving (Show)
+
+scanTokens = alexScanTokens
+
+}

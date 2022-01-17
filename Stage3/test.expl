@@ -1,0 +1,21 @@
+begin
+  read(a);
+	b = a;
+	while (a != 0 ) do
+		read(a);
+		b = b+a;
+		if(a == 20) then
+			while (a > 0) do
+				write(a);
+				a = a-1;
+				if (a == 10) then
+					break;
+				endif;
+			endwhile;
+			break;
+		else
+			continue;
+		endif;
+	endwhile;
+	write(b);
+end
