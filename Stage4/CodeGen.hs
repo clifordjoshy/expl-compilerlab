@@ -4,7 +4,8 @@ import Data.List (foldl', insertBy)
 import qualified Data.Map as Map
 import Data.Maybe ()
 import LabelLink (replaceLabels)
-import SyntaxTree
+import SymbolTable
+import SyntaxTree (SyntaxTree (..), VarResolve (..), isInteger, isString, isValidPtr)
 
 -- | freeRegisters -> (register, remainingRegisters)
 -- | Get a free register
@@ -28,6 +29,7 @@ genArmcXsm op lr rr = cmd ++ " " ++ lr ++ ", " ++ rr ++ "\n"
       '-' -> "SUB"
       '*' -> "MUL"
       '/' -> "DIV"
+      '%' -> "MOD"
       _ -> error "Invalid Arithmetic Operator"
 
 -- | operator -> leftRegister -> rightRegister -> xsmInstruction
@@ -105,7 +107,54 @@ genLibXsm fnCode (a1, a2, a3) tempReg =
       (Reg r) -> ("", r)
       None -> ("", "R0")
 
-type SymbolTable = Map.Map String (String, Int)
+-- | Resolvetype -> Symbol -> resRegister -> remainingRegisters -> SymbolTable -> Code
+-- | Returns code to resolve a variable node and stores the value in the passed register
+genValResolveCode :: VarResolve -> Symbol -> String -> [String] -> SymbolTable -> String
+genValResolveCode Simple (Unit _ addr) r _ _ = genMovXsm r $ genMemAccXsm $ show addr
+genValResolveCode Deref (Ptr _ addr) r regs _ = genMovXsm tempReg (genMemAccXsm $ show addr) ++ genMovXsm r (genMemAccXsm tempReg)
+  where
+    tempReg = head regs
+genValResolveCode (Index i) (Arr _ _ addr) r regs st = iCode ++ genArmcXsm '+' iReg (show addr) ++ genMovXsm r (genMemAccXsm iReg)
+  where
+    (iCode, iReg, _, _) = genCode Args {node = i, regsFree = regs, symTable = st, labels = [], blockLabels = Nothing}
+genValResolveCode (Index2D i j) (Arr2 _ m n addr) r regs st =
+  iCode ++ jCode
+    ++ genArmcXsm '*' iReg (show n)
+    ++ genArmcXsm '+' iReg jReg
+    ++ genArmcXsm '+' iReg (show addr)
+    ++ genMovXsm r (genMemAccXsm iReg)
+  where
+    (iCode, iReg, regs2, _) = genCode Args {node = i, regsFree = regs, symTable = st, labels = [], blockLabels = Nothing}
+    (jCode, jReg, _, _) = genCode Args {node = j, regsFree = regs2, symTable = st, labels = [], blockLabels = Nothing}
+genValResolveCode _ _ _ _ _ = error "Failed to resolve variable value: "
+
+-- | resolver -> symbol -> freeRegs -> SymbolTable -> (code, reg, remainingRegs)
+-- | Returns code to resolve a variable address and stores the address in a register
+genAddrResolveCode :: VarResolve -> Symbol -> [String] -> SymbolTable -> (String, String, [String])
+genAddrResolveCode Simple (Unit _ addr) regs _ = (genMovXsm r $ show addr, r, rs)
+  where
+    (r, rs) = getReg regs
+genAddrResolveCode Simple (Ptr _ addr) regs _ = (genMovXsm r $ show addr, r, rs)
+  where
+    (r, rs) = getReg regs
+genAddrResolveCode Deref (Ptr _ addr) regs _ = (genMovXsm r (genMemAccXsm $ show addr), r, rs)
+  where
+    (r, rs) = getReg regs
+genAddrResolveCode (Index i) (Arr _ _ addr) regs st = (iCode ++ genArmcXsm '+' iReg (show addr), iReg, rs)
+  where
+    (iCode, iReg, rs, _) = genCode Args {node = i, regsFree = regs, symTable = st, labels = [], blockLabels = Nothing}
+genAddrResolveCode (Index2D i j) (Arr2 _ m n addr) regs st =
+  ( iCode ++ jCode
+      ++ genArmcXsm '*' iReg (show n)
+      ++ genArmcXsm '+' iReg (show addr)
+      ++ genArmcXsm '+' iReg jReg,
+    iReg,
+    regs2
+  )
+  where
+    (iCode, iReg, regs2, _) = genCode Args {node = i, regsFree = regs, symTable = st, labels = [], blockLabels = Nothing}
+    (jCode, jReg, regs3, _) = genCode Args {node = j, regsFree = regs2, symTable = st, labels = [], blockLabels = Nothing}
+genAddrResolveCode a b _ _ = error $ "Failed to resolve variable address: " ++ show a ++ " " ++ show b
 
 data CodeArgs = Args
   { node :: SyntaxTree,
@@ -126,11 +175,16 @@ genCode a@Args {node = (LeafValStr val)} = (genMovXsm r val, r, remainingRegs, l
   where
     (r, remainingRegs) = getReg regsFree
     Args {regsFree = regsFree, labels = labels} = a
-genCode a@Args {node = (LeafVar var)} = (genMovXsm r $ genMemAccXsm $ show addr, r, remainingRegs, labels)
+genCode a@Args {node = (LeafVar var resolver)} = (genValResolveCode resolver symbol r remainingRegs st, r, remainingRegs, labels)
   where
     (r, remainingRegs) = getReg regsFree
     Args {regsFree = regsFree, labels = labels, symTable = st} = a
-    (_, addr) = st Map.! var
+    symbol = st Map.! var
+genCode a@Args {node = (NodeRef (LeafVar var resolver))} = (argCode, r, rem, labels)
+  where
+    Args {regsFree = regsFree, labels = labels, symTable = st} = a
+    symbol = st Map.! var
+    (argCode, r, rem) = genAddrResolveCode resolver symbol regsFree st
 genCode a@Args {node = (NodeArmc op l r)} = (lCode ++ rCode ++ genArmcXsm op lReg rReg, lReg, regRemaining, labels)
   where
     (lCode, lReg, regRemaining, _) = genCode a {node = l}
@@ -141,13 +195,16 @@ genCode a@Args {node = (NodeBool op l r)} = (lCode ++ rCode ++ genBoolXsm op lRe
     (lCode, lReg, regRemaining, _) = genCode a {node = l}
     (rCode, rReg, _, _) = genCode a {node = r, regsFree = regRemaining}
     Args {labels = labels} = a
-genCode a@Args {node = (NodeAssign (LeafVar var) r)} = (rCode ++ genMovXsm (genMemAccXsm (show varAddr)) rReg, "", regsFree, labels)
+genCode a@Args {node = (NodeAssign (LeafVar var varResolver) r)} = (rCode ++ lCode ++ genMovXsm (genMemAccXsm lReg) rReg, "", regsFree, labels)
   where
-    (rCode, rReg, _, _) = if typeCheck r then genCode a {node = r} else error "Type mismatch in assignment"
-    (varType, varAddr) = st Map.! var
-    typeCheck = case varType of
+    (rCode, rReg, regs2, _) = if typeCheck r then genCode a {node = r} else error "Type mismatch in assignment"
+    (lCode, lReg, _) = genAddrResolveCode varResolver sym regs2 st
+    sym = st Map.! var
+    typeCheck = case getType sym of
       "int" -> isInteger
       "str" -> isString
+      "intptr" -> isValidPtr "int" st
+      "strptr" -> isValidPtr "str" st
       _ -> error "Invalid variable type"
     Args {regsFree = regsFree, labels = labels, symTable = st} = a
 genCode a@Args {node = (NodeStmt "Write" arg)} = (argCode ++ genLibXsm "Write" libArgs (head regRemaining), "", regsFree, labels)
@@ -155,11 +212,12 @@ genCode a@Args {node = (NodeStmt "Write" arg)} = (argCode ++ genLibXsm "Write" l
     (argCode, argReg, regRemaining, _) = genCode a {node = arg}
     libArgs = (ValInt $ -2, Reg argReg, None)
     Args {regsFree = regsFree, labels = labels} = a
-genCode a@Args {node = (NodeStmt "Read" arg)} = (genLibXsm "Read" libArgs (head regsFree), "", regsFree, labels)
+genCode a@Args {node = (NodeStmt "Read" arg)} = (argCode ++ genLibXsm "Read" libArgs (head regRem), "", regsFree, labels)
   where
-    libArgs = (ValInt $ -1, ValInt varAddr, None)
-    (LeafVar var) = arg
-    (varType, varAddr) = st Map.! var
+    libArgs = (ValInt $ -1, Reg argReg, None)
+    (LeafVar var varResolver) = arg
+    sym = st Map.! var
+    (argCode, argReg, regRem) = genAddrResolveCode varResolver sym regsFree st
     Args {regsFree = regsFree, labels = labels, symTable = st} = a
 genCode a@Args {node = (NodeIf cond exec)} =
   ( genLabelXsm label ++ condCode ++ genJmpZXsm condReg endLabel ++ blockCode ++ genLabelXsm endLabel,
@@ -222,17 +280,8 @@ genCode a@Args {node = (NodeConn l r)} = (lCode ++ rCode, "", regsFree, remainin
 genCode Args {node = NodeEmpty, regsFree = rf, labels = lb} = ("", "", rf, lb)
 genCode a = error $ "Invalid Node : " ++ show (node a)
 
--- | Array of decls ("type": [vars]) -> (SymbolTable, freeAddr)
-genSymbolTable :: [(String, [String])] -> (SymbolTable, Int)
-genSymbolTable [] = (Map.empty, 4096)
-genSymbolTable ((t, names) : ds) = (Map.unionWith nameError map1 map2, addr + length names)
-  where
-    (map1, addr) = genSymbolTable ds
-    map2 = Map.fromListWith nameError [(n, (t, a)) | (n, a) <- zip names [addr ..]]
-    nameError = error "Non-unique variable declaration"
-
 -- | AST -> Variables -> Code
-codeGen :: SyntaxTree -> [(String, [String])] -> String
+codeGen :: SyntaxTree -> [(String, [SymbolBase])] -> String
 codeGen ast vars = foldl' (\acc c -> acc ++ show c ++ "\n") "" [0, 2056, 0, 0, 0, 0, 0, 0] ++ code
   where
     (symTable, sp) = genSymbolTable vars

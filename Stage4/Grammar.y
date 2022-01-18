@@ -3,6 +3,7 @@ module Grammar where
 import Tokens
 import SyntaxTree
 import qualified Data.Map as Map
+import SymbolTable (SymbolBase(..))
 }
 
 %name parseCalc
@@ -17,8 +18,12 @@ import qualified Data.Map as Map
     '-'       { TokenMinus }
     '*'       { TokenTimes }
     '/'       { TokenDiv }
+    '%'       { TokenMod }
     '('       { TokenLParen }
     ')'       { TokenRParen }
+    '['       { TokenLBox }
+    ']'       { TokenRBox }
+    '&'       { TokenAddr }
     '='       { TokenAssign }
     '<'       { TokenLt }
     '>'       { TokenGt }
@@ -48,7 +53,7 @@ import qualified Data.Map as Map
 
 %nonassoc '==' '!=' '>' '<' '>=' '<='
 %left '+' '-'
-%left '*' '/'
+%left '*' '/' '%'
 
 %%
 
@@ -61,13 +66,14 @@ Slist : Slist Stmt              { NodeConn $1 $2 }
       | Stmt                    { $1 }
 
 Stmt : READ '(' Variable ')' ';'                           { NodeStmt "Read" $3 }
-     | WRITE '(' E ')' ';'                                 { if isInteger $3 then (NodeStmt "Write" $3) else typeError $3 } 
+     | WRITE '(' E ')' ';'                                 { NodeStmt "Write" $3 } 
      | WRITE '(' String ')' ';'                            { NodeStmt "Write" $3 } 
-     | Variable '=' E ';'                                  { if isInteger $3 then (NodeAssign $1 $3) else typeError $3 }
+     | Variable '=' E ';'                                  { NodeAssign $1 $3 }
      | Variable '=' String ';'                             { NodeAssign $1 $3}
-     | IF '(' E ')' THEN Slist ENDIF ';'                   { if isBoolean $3 then (NodeIf $3 $6) else typeError $3 }
-     | IF '(' E ')' THEN Slist ELSE Slist ENDIF ';'        { if isBoolean $3 then (NodeIfElse $3 $6 $8) else typeError $3 }
-     | WHILE '(' E ')' DO Slist ENDWHILE ';'               { if isBoolean $3 then (NodeWhile $3 $6) else typeError $3 }
+     | Variable '=' '&' Variable ';'                       { NodeAssign $1 (NodeRef $4) }
+     | IF '(' B ')' THEN Slist ENDIF ';'                   { NodeIf $3 $6 }
+     | IF '(' B ')' THEN Slist ELSE Slist ENDIF ';'        { NodeIfElse $3 $6 $8 }
+     | WHILE '(' B ')' DO Slist ENDWHILE ';'               { NodeWhile $3 $6 }
      | BREAK ';'                                           { NodeBreak }
      | CONTINUE ';'                                        { NodeCont }
 
@@ -75,18 +81,24 @@ E : E '+' E            { NodeArmc '+' $1 $3 }
   | E '-' E            { NodeArmc '-' $1 $3 }
   | E '*' E            { NodeArmc '*' $1 $3 }
   | E '/' E            { NodeArmc '/' $1 $3 }
-  | E '<' E            { NodeBool "<" $1 $3 }
+  | E '%' E            { NodeArmc '%' $1 $3 }
+  | '(' E ')'          { $2 }
+  | int                { LeafValInt $1 }
+  | Variable           { $1 }
+
+B : E '<' E            { NodeBool "<" $1 $3 }
   | E '>' E            { NodeBool ">" $1 $3 }
   | E '<=' E           { NodeBool "<=" $1 $3 } 
   | E '>=' E           { NodeBool ">=" $1 $3 } 
   | E '!=' E           { NodeBool "!=" $1 $3 } 
   | E '==' E           { NodeBool "==" $1 $3 } 
-  | '(' E ')'          { $2 }
-  | int                { LeafValInt $1 }
-  | Variable           { $1 }
 
-Variable : var         { LeafVar $1 }
-String : str           { LeafValStr $1 }
+Variable : var                          { LeafVar $1 Simple}
+         | var '[' E ']'                { LeafVar $1 (Index $3) }
+         | var '['E']' '['E']'          { LeafVar $1 (Index2D $3 $6) }
+         | '*' var                      { LeafVar $2 Deref }
+
+String : str                            { LeafValStr $1 }
 
 Declarations : DECL DeclList ENDDECL    { $2 }
              | DECL ENDDECL             { [] }
@@ -99,9 +111,13 @@ Decl : Type VarList ';'                 { ($1, $2) }
 Type : INT                              { "int" }
      | STR                              { "str" }
 
-VarList : VarList ',' var               { $1 ++ [$3] }
-        | var                           { [$1] }
-
+VarList : VarList ',' Var               { $1 ++ [$3] }
+        | Var                           { [$1] }
+        
+Var : var                               { U $1 }
+    | var '[' int ']'                   { A $1 $3 }
+    | var '['int']' '['int']'           { A2 $1 $3 $6 }
+    | '*' var                           { P $2 }
 
 {
 
@@ -111,4 +127,5 @@ parseError t = error $"Parse error: " ++ show t
 typeError :: SyntaxTree -> a
 typeError t = error $ "Type Error: " ++ show t 
 
+type Var = SymbolBase
 }

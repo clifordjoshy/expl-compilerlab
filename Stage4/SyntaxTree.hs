@@ -1,9 +1,13 @@
-module SyntaxTree (SyntaxTree (..), prettyPrint, isInteger, isString, isBoolean) where
+module SyntaxTree (SyntaxTree (..), VarResolve (..), prettyPrint, isInteger, isString, isValidPtr) where
 
+import qualified Data.Map as Map
 import Data.Tree (Tree (Node), drawTree)
+import SymbolTable (SymbolTable, getType)
+
+data VarResolve = Simple | Deref | Index SyntaxTree | Index2D SyntaxTree SyntaxTree deriving (Show)
 
 data SyntaxTree
-  = LeafVar String
+  = LeafVar String VarResolve
   | LeafValInt Int
   | LeafValStr String
   | NodeStmt String SyntaxTree
@@ -14,6 +18,7 @@ data SyntaxTree
   | NodeIf SyntaxTree SyntaxTree
   | NodeIfElse SyntaxTree SyntaxTree SyntaxTree
   | NodeWhile SyntaxTree SyntaxTree
+  | NodeRef SyntaxTree
   | NodeBreak
   | NodeCont
   | NodeEmpty
@@ -26,15 +31,16 @@ isInteger LeafValInt {} = True
 isInteger NodeArmc {} = True
 isInteger _ = False
 
--- | Returns if a given constructor evaluates to a boolean value
-isBoolean :: SyntaxTree -> Bool
-isBoolean NodeBool {} = True
-isBoolean _ = False
-
 -- | Returns if a given constructor evaluates to a string value
 isString :: SyntaxTree -> Bool
 isString LeafValStr {} = True
 isString _ = False
+
+-- | type -> SymbolTable -> node -> isValid
+-- | Returns if a given SyntaxTree evaluates to a pointer of given type
+isValidPtr :: String -> SymbolTable -> SyntaxTree -> Bool
+isValidPtr t st (NodeRef (LeafVar var _)) = getType (st Map.! var) == t
+isValidPtr _ _ _ = False
 
 toDataTree :: SyntaxTree -> Tree String
 toDataTree t = case t of

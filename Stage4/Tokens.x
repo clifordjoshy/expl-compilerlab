@@ -17,6 +17,7 @@ tokens :-
   \-              { \_ -> TokenMinus }
   \*              { \_ -> TokenTimes }
   \/              { \_ -> TokenDiv }
+  \%              { \_ -> TokenMod }
   \(              { \_ -> TokenLParen }
   \)              { \_ -> TokenRParen }
   \=              { \_ -> TokenAssign }
@@ -46,6 +47,7 @@ tokens :-
   @varName        { \s -> TokenVar s }
   \[              { \_ -> TokenLBox }
   \]              { \_ -> TokenRBox }
+  \&              { \_ -> TokenAddr }
   \,              { \_ -> TokenComma }
   \;              { \_ -> TokenStmtEnd }
 
@@ -58,6 +60,7 @@ data Token = TokenIntVal Int
            | TokenMinus
            | TokenTimes
            | TokenDiv
+           | TokenMod
            | TokenLt
            | TokenLtE
            | TokenGt
@@ -85,6 +88,9 @@ data Token = TokenIntVal Int
            | TokenEndDecl
            | TokenInt
            | TokenStr
+           | TokenLBox
+           | TokenRBox
+           | TokenAddr
            | TokenComma
            deriving (Show)
 
