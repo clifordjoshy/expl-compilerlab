@@ -111,6 +111,7 @@ genLibXsm fnCode (a1, a2, a3) tempReg =
 -- | Returns code to resolve a variable node and stores the value in the passed register
 genValResolveCode :: VarResolve -> Symbol -> String -> [String] -> SymbolTable -> String
 genValResolveCode Simple (Unit _ addr) r _ _ = genMovXsm r $ genMemAccXsm $ show addr
+genValResolveCode Simple (Ptr _ addr) r _ _ = genMovXsm r $ genMemAccXsm $ show addr
 genValResolveCode Deref (Ptr _ addr) r regs _ = genMovXsm tempReg (genMemAccXsm $ show addr) ++ genMovXsm r (genMemAccXsm tempReg)
   where
     tempReg = head regs
@@ -126,7 +127,7 @@ genValResolveCode (Index2D i j) (Arr2 _ m n addr) r regs st =
   where
     (iCode, iReg, regs2, _) = genCode Args {node = i, regsFree = regs, symTable = st, labels = [], blockLabels = Nothing}
     (jCode, jReg, _, _) = genCode Args {node = j, regsFree = regs2, symTable = st, labels = [], blockLabels = Nothing}
-genValResolveCode _ _ _ _ _ = error "Failed to resolve variable value: "
+genValResolveCode _ _ _ _ _ = error "Failed to resolve variable value"
 
 -- | resolver -> symbol -> freeRegs -> SymbolTable -> (code, reg, remainingRegs)
 -- | Returns code to resolve a variable address and stores the address in a register
@@ -154,7 +155,7 @@ genAddrResolveCode (Index2D i j) (Arr2 _ m n addr) regs st =
   where
     (iCode, iReg, regs2, _) = genCode Args {node = i, regsFree = regs, symTable = st, labels = [], blockLabels = Nothing}
     (jCode, jReg, regs3, _) = genCode Args {node = j, regsFree = regs2, symTable = st, labels = [], blockLabels = Nothing}
-genAddrResolveCode a b _ _ = error $ "Failed to resolve variable address: " ++ show a ++ " " ++ show b
+genAddrResolveCode a b _ _ = error "Failed to resolve variable address"
 
 data CodeArgs = Args
   { node :: SyntaxTree,
@@ -200,11 +201,14 @@ genCode a@Args {node = (NodeAssign (LeafVar var varResolver) r)} = (rCode ++ lCo
     (rCode, rReg, regs2, _) = if typeCheck r then genCode a {node = r} else error "Type mismatch in assignment"
     (lCode, lReg, _) = genAddrResolveCode varResolver sym regs2 st
     sym = st Map.! var
+    isDeref = case varResolver of
+      Deref -> True
+      _ -> False
     typeCheck = case getType sym of
-      "int" -> isInteger
-      "str" -> isString
-      "intptr" -> isValidPtr "int" st
-      "strptr" -> isValidPtr "str" st
+      "int" -> isInteger st
+      "str" -> isString st
+      "intptr" -> if isDeref then isInteger st else isValidPtr "int" st
+      "strptr" -> if isDeref then isString st else isValidPtr "str" st
       _ -> error "Invalid variable type"
     Args {regsFree = regsFree, labels = labels, symTable = st} = a
 genCode a@Args {node = (NodeStmt "Write" arg)} = (argCode ++ genLibXsm "Write" libArgs (head regRemaining), "", regsFree, labels)

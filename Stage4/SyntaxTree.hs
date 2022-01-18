@@ -25,21 +25,23 @@ data SyntaxTree
   deriving (Show)
 
 -- | Returns if a given constructor evaluates to an integer value
-isInteger :: SyntaxTree -> Bool
-isInteger LeafVar {} = True
-isInteger LeafValInt {} = True
-isInteger NodeArmc {} = True
-isInteger _ = False
+isInteger :: SymbolTable -> SyntaxTree -> Bool
+isInteger st (LeafVar var _) = getType (st Map.! var) == "int"
+isInteger _ LeafValInt {} = True
+isInteger _ NodeArmc {} = True
+isInteger _ _ = False
 
 -- | Returns if a given constructor evaluates to a string value
-isString :: SyntaxTree -> Bool
-isString LeafValStr {} = True
-isString _ = False
+isString :: SymbolTable -> SyntaxTree -> Bool
+isString _ LeafValStr {} = True
+isString st (LeafVar var _) = getType (st Map.! var) == "str"
+isString _ _ = False
 
 -- | type -> SymbolTable -> node -> isValid
 -- | Returns if a given SyntaxTree evaluates to a pointer of given type
 isValidPtr :: String -> SymbolTable -> SyntaxTree -> Bool
 isValidPtr t st (NodeRef (LeafVar var _)) = getType (st Map.! var) == t
+isValidPtr t st (LeafVar var _) = getType (st Map.! var) == (t ++ "ptr")
 isValidPtr _ _ _ = False
 
 toDataTree :: SyntaxTree -> Tree String
