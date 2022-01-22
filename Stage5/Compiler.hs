@@ -1,9 +1,9 @@
 module Main where
 
-import CodeGen (codeGen)
-import Grammar (parseCalc)
-import SymbolTable (genSymbolTable)
-import SyntaxTree (prettyPrint)
+-- import CodeGen (codeGen)
+import Grammar
+import SymbolTable
+import SyntaxTree
 import System.Environment (getArgs)
 import System.IO (IOMode (ReadMode, WriteMode), hClose, hGetContents, hPutStr, openFile)
 import Tokens (scanTokens)
@@ -19,10 +19,10 @@ main = do
   args <- getArgs
   inputFile <- openFile (head args) ReadMode
   fileContents <- hGetContents inputFile
-  let res = parseCalc (scanTokens fileContents)
-  print res
+  let (gTable, sp, fDecl, main) = parseTokens (scanTokens fileContents)
   -- putStr $ prettyPrint ast
-  -- print $ genSymbolTable vars
-  -- let code = codeGen ast vars
+  -- let (gSymTable, addr, _) = genSymbolTable gDeclBlock
+  print gTable
+  -- let code = codeGen gDeclBlock fDefBlock mainBlock
   -- createOutputFile code
   hClose inputFile

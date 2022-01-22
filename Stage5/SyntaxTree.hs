@@ -1,16 +1,16 @@
-module SyntaxTree (SyntaxTree (..), VarResolve (..), prettyPrint, isInteger, isString, isValidPtr) where
+module SyntaxTree (SyntaxTree (..), VarResolve (..), prettyPrint, isInteger, getVarType, getFnType) where
 
 import qualified Data.Map as Map
 import Data.Tree (Tree (Node), drawTree)
-import SymbolTable (SymbolTable, getType)
+import SymbolTable
 
 data VarResolve = Simple | Deref | Index SyntaxTree | Index2D SyntaxTree SyntaxTree deriving (Show)
 
 data SyntaxTree
   = LeafVar String VarResolve
+  | LeafFn String [SyntaxTree]
   | LeafValInt Int
   | LeafValStr String
-  | LeafFn String [SyntaxTree]
   | NodeStmt String SyntaxTree
   | NodeArmc Char SyntaxTree SyntaxTree
   | NodeBool String SyntaxTree SyntaxTree
@@ -22,28 +22,25 @@ data SyntaxTree
   | NodeRef SyntaxTree
   | NodeBreak
   | NodeCont
-  | NodeEmpty
+  | NodeReturn SyntaxTree
   deriving (Show)
 
 -- | Returns if a given constructor evaluates to an integer value
-isInteger :: SymbolTable -> SyntaxTree -> Bool
-isInteger st (LeafVar var _) = getType (st Map.! var) == "int"
+isInteger :: GSymbolTable -> SyntaxTree -> Bool
+isInteger st (LeafVar var Simple) = getSymbolType (st Map.! var) == "int"
+isInteger st (LeafVar var Deref) = getSymbolType (st Map.! var) == "intptr"
+isInteger st (LeafFn name _) = getSymbolType (st Map.! name) == "int"
 isInteger _ LeafValInt {} = True
 isInteger _ NodeArmc {} = True
 isInteger _ _ = False
 
--- | Returns if a given constructor evaluates to a string value
-isString :: SymbolTable -> SyntaxTree -> Bool
-isString _ LeafValStr {} = True
-isString st (LeafVar var _) = getType (st Map.! var) == "str"
-isString _ _ = False
+getVarType :: GSymbolTable -> SyntaxTree -> String
+getVarType st (LeafVar var _) = getSymbolType (st Map.! var)
+getVarType _ _ = error "Not a variable: "
 
--- | type -> SymbolTable -> node -> isValid
--- | Returns if a given SyntaxTree evaluates to a pointer of given type
-isValidPtr :: String -> SymbolTable -> SyntaxTree -> Bool
-isValidPtr t st (NodeRef (LeafVar var _)) = getType (st Map.! var) == t
-isValidPtr t st (LeafVar var _) = getType (st Map.! var) == (t ++ "ptr")
-isValidPtr _ _ _ = False
+getFnType :: GSymbolTable -> SyntaxTree -> String
+getFnType st (LeafFn name _) = getSymbolType (st Map.! name)
+getFnType _ _ = error "Not a function"
 
 toDataTree :: SyntaxTree -> Tree String
 toDataTree t = case t of
@@ -57,7 +54,6 @@ toDataTree t = case t of
   NodeWhile cond bl -> Node "While" [toDataTree cond, toDataTree bl]
   NodeBreak -> Node "Break" []
   NodeCont -> Node "Continue" []
-  NodeEmpty -> Node "Empty" []
   _ -> Node (show t) []
 
 prettyPrint :: SyntaxTree -> String
