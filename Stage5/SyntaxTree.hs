@@ -27,8 +27,8 @@ data SyntaxTree
 
 -- | Returns if a given constructor evaluates to an integer value
 isInteger :: GSymbolTable -> SyntaxTree -> Bool
-isInteger st (LeafVar var Simple) = getSymbolType (st Map.! var) == "int"
 isInteger st (LeafVar var Deref) = getSymbolType (st Map.! var) == "intptr"
+isInteger st (LeafVar var _) = getSymbolType (st Map.! var) == "int"
 isInteger st (LeafFn name _) = getSymbolType (st Map.! name) == "int"
 isInteger _ LeafValInt {} = True
 isInteger _ NodeArmc {} = True

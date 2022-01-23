@@ -84,7 +84,7 @@ assignTypeCheck n tc = do
 intCheck :: SyntaxTree -> State ParserState SyntaxTree
 intCheck n = do
   (_, _, symTab) <- get
-  if isInteger symTab n then return n else error "Integer value was expected"
+  if isInteger symTab n then return n else error $ "Integer value was expected : " ++ show n
 
 symCheck :: (Symbol -> Bool) -> String -> State ParserState ()
 symCheck isSym n = do

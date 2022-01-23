@@ -1,7 +1,7 @@
 module Main where
 
--- import CodeGen (codeGen)
-import Parser
+import CodeGen (codeGen)
+import Parser (parseTokens)
 import SymbolTable
 import SyntaxTree
 import System.Environment (getArgs)
@@ -21,7 +21,7 @@ main = do
   fileContents <- hGetContents inputFile
   let (gTable, sp, fDecl, main) = parseTokens (scanTokens fileContents)
   -- putStr $ prettyPrint ast
-  print fDecl
-  -- let code = codeGen gTable sp fDecl main
-  -- createOutputFile code
+  -- print fDecl
+  let code = codeGen gTable sp fDecl main
+  createOutputFile code
   hClose inputFile

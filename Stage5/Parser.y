@@ -189,9 +189,10 @@ Main: MAIN                                                   {% saveMainFn }
 
 parseError t = error $ "Parse error: " ++ show t
 
-parseTokens tokenStream = (gSymTable, sp, fDecl, main)
+parseTokens tokenStream = (gSymFull, sp, fDecl, main)
   where
     ((sp, fDecl, main), (gSymTable, _, _)) = runState (parse tokenStream) startState
+    gSymFull = Map.insert "main" (Func "int" [] "MAIN") gSymTable
 
 type Program =
   ( Int,

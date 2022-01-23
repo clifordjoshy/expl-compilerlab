@@ -47,6 +47,12 @@ isArr2 :: Symbol -> Bool
 isArr2 Arr2 {} = True
 isArr2 _ = False
 
+getSymbolAddress :: Symbol -> Int
+getSymbolAddress (Unit _ a) = a
+getSymbolAddress (Arr _ _ a) = a
+getSymbolAddress (Arr2 _ _ _ a) = a
+getSymbolAddress _ = error "No address for function"
+
 -- | (type, [base]) -> startAddress -> fnLabels -> ([(name, symbol)], nextAddr, remainingLabels)
 -- | Converts a list of SymbolBase to a list of Symbol (map style)
 baseToSymbolList :: (String, [SymbolBase]) -> Int -> [String] -> ([(String, Symbol)], Int, [String])

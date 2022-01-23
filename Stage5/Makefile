@@ -9,9 +9,9 @@ Parser.hs : Parser.y
 LabelLink.hs : LabelLink.x
 	alex LabelLink.x
     
-Compiler : Tokens.hs Parser.hs ParserState.hs Compiler.hs SyntaxTree.hs SymbolTable.hs LabelLink.hs XsmGen.hs
+Compiler : Tokens.hs Parser.hs ParserState.hs Compiler.hs SyntaxTree.hs SymbolTable.hs LabelLink.hs XsmGen.hs CodeGen.hs
 	ghc --make Compiler -outputdir=__intermediate__
     
 clean:
-	rm -rf Compiler Grammar.hs Tokens.hs LabelLink.hs __intermediate__
+	rm -rf Compiler Parser.hs Tokens.hs LabelLink.hs __intermediate__
 
