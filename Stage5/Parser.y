@@ -1,10 +1,11 @@
 {
-module Grammar(parseTokens) where
+module Parser(parseTokens) where
 import Tokens
-import SyntaxTree
+import Control.Monad.State
+import ParserState
 import qualified Data.Map as Map
 import SymbolTable
-import Control.Monad.State
+import SyntaxTree
 }
 
 %name parse
@@ -60,6 +61,9 @@ import Control.Monad.State
 %nonassoc '==' '!=' '>' '<' '>=' '<='
 %left '+' '-'
 %left '*' '/' '%'
+
+%nonassoc LOWER
+%nonassoc HIGHER
 
 %%
 
@@ -124,26 +128,26 @@ LVarList : LVarList ',' BaseVar         { $1 ++ [$3] }
 Routine : BEGIN Slist Retstmt END       { NodeConn $2 $3 } 
         | BEGIN Retstmt END             { $2 }
 
-Retstmt : RETURN Variable ';'           {% varType $2 >>= retTypeCheck >> return (NodeReturn $2) }
-        | RETURN E ';'                  {% retTypeCheck "int" >> return (NodeReturn $2) }
-        | RETURN String ';'             {% retTypeCheck "str" >> return (NodeReturn $2) }
+Retstmt : RETURN RVal ';'               {% let (t, v) = $2 in (retTypeCheck t >> return (NodeReturn v)) }
+
+RVal : Variable       %prec HIGHER      {% varType $1 >>= \t -> return (t, $1) }
+     | FnCall         %prec HIGHER      {% fnType $1 >>= \t -> return (t, $1) }
+     | String                           { ("str", $1) }
+     | E                                { ("int", $1) }
+     | '&' Variable                     {% varType $2 >>= \t -> return (t++"ptr", NodeRef $2) }
 
 Slist : Slist Stmt                      { NodeConn $1 $2 }
       | Stmt                            { $1 }
 
 Stmt : READ '(' Variable ')' ';'                           { NodeStmt "Read" $3 }
-     | WRITE '(' E ')' ';'                                 { NodeStmt "Write" $3 } 
-     | WRITE '(' String ')' ';'                            { NodeStmt "Write" $3 } 
-     | Variable '=' FnCall ';'                             {% fnType $3 >>= (\t -> assignTypeCheck $1 t) >> return (NodeAssign $1 $3) } 
-     | Variable '=' E ';'                                  {% assignTypeCheck $1 "int" >> return (NodeAssign $1 $3) }
-     | Variable '=' String ';'                             {% assignTypeCheck $1 "str" >> return (NodeAssign $1 $3) }
-     | Variable '=' '&' Variable ';'                       {% varType $4 >>= (\t -> assignTypeCheck $1 (t++"ptr")) >> return (NodeAssign $1 (NodeRef $4)) }
+     | Variable '=' RVal ';'                               {% let (t, v) = $3 in (assignTypeCheck $1 t >> return (NodeAssign $1 v)) } 
+     | WRITE '(' RVal ')' ';'                              { let (t, v) = $3 in NodeStmt "Write" v } 
      | IF '(' B ')' THEN Slist ENDIF ';'                   { NodeIf $3 $6 }
      | IF '(' B ')' THEN Slist ELSE Slist ENDIF ';'        { NodeIfElse $3 $6 $8 }
      | WHILE '(' B ')' DO Slist ENDWHILE ';'               { NodeWhile $3 $6 }
      | BREAK ';'                                           { NodeBreak }
      | CONTINUE ';'                                        { NodeCont }
-     {-todo make E a valid statement-}
+     | FnCall ';'                                          { $1 }
 
 E : E '+' E                             { NodeArmc '+' $1 $3 }
   | E '-' E                             { NodeArmc '-' $1 $3 }
@@ -152,8 +156,8 @@ E : E '+' E                             { NodeArmc '+' $1 $3 }
   | E '%' E                             { NodeArmc '%' $1 $3 }
   | '(' E ')'                           { $2 }
   | int                                 { LeafValInt $1 }
-  | FnCall                              {% intCheck $1 }
-  | Variable                            {% intCheck $1 }
+  | FnCall           %prec LOWER        {% intCheck $1 }
+  | Variable         %prec LOWER        {% intCheck $1 }
 
 FnCall: id '(' ArgList ')'              { LeafFn $1 $3 }
 
@@ -168,10 +172,10 @@ B : E '<' E                             { NodeBool "<" $1 $3 }
   | E '!=' E                            { NodeBool "!=" $1 $3 } 
   | E '==' E                            { NodeBool "==" $1 $3 } 
 
-Variable : id                           { LeafVar $1 Simple}
-         | id '[' E ']'                 { LeafVar $1 (Index $3) }
-         | id '['E']' '['E']'           { LeafVar $1 (Index2D $3 $6) }
-         | '*' id                       { LeafVar $2 Deref }
+Variable : id                           {% symCheck (isUnit) $1 >> return (LeafVar $1 Simple) }
+         | id '[' E ']'                 {% symCheck (isArr) $1 >> return (LeafVar $1 (Index $3)) }
+         | id '['E']' '['E']'           {% symCheck (isArr2) $1 >> return (LeafVar $1 (Index2D $3 $6)) }
+         | '*' id                       {% symCheck (isPtr) $2 >> return (LeafVar $2 Deref) }
 
 String : str                            { LeafValStr $1 }
 
@@ -182,92 +186,8 @@ MainBlock : INT Main '(' ')' '{' LDeclBlock Routine '}'      { ($6, $7) }
 Main: MAIN                                                   {% saveMainFn }
 
 {
-type ParserState = (GSymbolTable, Symbol, GSymbolTable)
-
--- Unit "" 0 is a temp junk value
-startState = (Map.empty, Unit "" 0, Map.empty)
 
 parseError t = error $ "Parse error: " ++ show t
-
-typeError t = error $ "Type Error: " ++ show t
-
--- STATE UPDATE FUNCTIONS
--- Saves and returns global symbol table
-saveGTable :: [(String, [SymbolBase])] -> State ParserState Int
-saveGTable decls = do
-  (_, start1, start2) <- get
-  let (gSymTable, sp, _) = genGSymbolTable decls
-  put (gSymTable, start1, start2)
-  return sp
-
--- Saves and returns local symbol table
-saveLTable :: [(String, [SymbolBase])] -> State ParserState LSymbolTable
-saveLTable decls = do
-  (gSymTable, cFn, _) <- get
-  let (lSymTable, _) = genLSymbolTable decls
-      lSymG = Map.map (uncurry Unit) lSymTable
-      (Func _ args _) = cFn
-      (argSymTable, _) = genLSymbolTable (fmap (\(a, b) -> (a, [b])) args)
-      argSymG = Map.map (uncurry Unit) argSymTable
-      localSymbols = Map.unionWith (error "Args and local variables have same name") lSymG argSymG
-      mergedSymTable = Map.union localSymbols gSymTable
-  put (gSymTable, cFn, mergedSymTable)
-  return lSymTable
-
--- Saves current function as symbol
-saveCurFn :: String -> State ParserState String
-saveCurFn name = do
-  (gSymTable, _, lSymTable) <- get
-  let curFn =
-        ( case Map.lookup name gSymTable of
-            Just f -> f
-            Nothing -> error $ "Function " ++ name ++ " not declared."
-        )
-  put (gSymTable, curFn, lSymTable)
-  return name
-
-saveMainFn :: State ParserState String
-saveMainFn = do
-  (gSymTable, _, lSymTable) <- get
-  let curFn = Func "int" [] ""
-  put (gSymTable, curFn, lSymTable)
-  return "main"
-
--- TYPE CHECK FUNCTIONS
-type FDef = (String, String, [(String, SymbolBase)], LSymbolTable, SyntaxTree)
-
--- Typechecks and returns given fn defn
-fnTypeCheck :: FDef -> State ParserState FDef
-fnTypeCheck a@(t, name, params, _, _) = do
-  (_, cFn, _) <- get
-  let (Func td pd _) = cFn
-  if t == td && params == pd then return a else error "Function definition does not match declaration"
-
-retTypeCheck :: String -> State ParserState ()
-retTypeCheck t = do
-  (_, cFn, _) <- get
-  let (Func td _ _) = cFn
-  if t == td then return () else error $ "Function returns " ++ t ++ " instead of " ++ td
-
-assignTypeCheck :: SyntaxTree -> String -> State ParserState ()
-assignTypeCheck n tc = do
-  t <- varType n
-  if t == tc then return () else error $ "Cannot assign " ++ tc ++ " to " ++ t
-
-intCheck :: SyntaxTree -> State ParserState SyntaxTree
-intCheck n = do
-  (_, _, symTab) <- get
-  if isInteger symTab n then return n else error "Integer value was expected"
-
-varType :: SyntaxTree -> State ParserState String
-varType n = do
-  (_, _, symTab) <- get
-  return $ getVarType symTab n
-
-fnType :: SyntaxTree -> State ParserState String
-fnType n = do
-  (_, _, symTab) <- get
-  return $ getFnType symTab n
 
 parseTokens tokenStream = (gSymTable, sp, fDecl, main)
   where
@@ -276,7 +196,7 @@ parseTokens tokenStream = (gSymTable, sp, fDecl, main)
 type Program =
   ( Int,
     [FDef],
-    [([(String, String)], SyntaxTree)]
+    (LSymbolTable, SyntaxTree)
   )
 
 }

@@ -1,5 +1,6 @@
 module SymbolTable where
 
+import Data.List (foldl')
 import qualified Data.Map as Map
 
 -- | Type used in the Grammar file for making the variable list
@@ -29,6 +30,22 @@ getSymbolType (Unit t _) = t
 getSymbolType (Arr t _ _) = t
 getSymbolType (Arr2 t _ _ _) = t
 getSymbolType (Func t _ _) = t
+
+isUnit :: Symbol -> Bool
+isUnit Unit {} = True
+isUnit _ = False
+
+isPtr :: Symbol -> Bool
+isPtr (Unit t _) = drop (length t - 3) t == "ptr"
+isPtr _ = False
+
+isArr :: Symbol -> Bool
+isArr Arr {} = True
+isArr _ = False
+
+isArr2 :: Symbol -> Bool
+isArr2 Arr2 {} = True
+isArr2 _ = False
 
 -- | (type, [base]) -> startAddress -> fnLabels -> ([(name, symbol)], nextAddr, remainingLabels)
 -- | Converts a list of SymbolBase to a list of Symbol (map style)
@@ -62,16 +79,24 @@ genGSymbolTable (d : ds) = (Map.unionWith nameError map1 map2, addrEnd, remainin
     map2 = Map.fromListWith nameError symbolList
     nameError = error "Non-unique variable declaration"
 
--- | Array of decls ("type": [unit/ptr]) -> (LSymbolTable, nextAddr/size)
-genLSymbolTable :: [(String, [SymbolBase])] -> (LSymbolTable, Int)
-genLSymbolTable [] = (Map.empty, 0)
-genLSymbolTable ((t, vars) : ds) = (Map.unionWith nameError map1 map2, addr + length vars)
+-- | Array of decls ("type": [unit/ptr]) -> startAddress -> LSymbolTable
+lSymbolTableHelper :: [(String, [SymbolBase])] -> Int -> LSymbolTable
+lSymbolTableHelper decls startAddr = Map.fromListWith nameError mergedSymList
   where
-    (map1, addr) = genLSymbolTable ds
-    map2 = Map.fromListWith nameError symbolList
-    symbolList = [toTableEntry v i | (v, i) <- zip vars [addr ..]]
-    toTableEntry v a = case v of
+    toTableEntry t v a = case v of
       U n -> (n, (t, a))
       P n -> (n, (t ++ "ptr", a))
       _ -> error "Local variables can only be pointers or simple"
+    toSymbolList (t, vars) sa = [toTableEntry t v i | (v, i) <- zip vars [sa ..]]
+    mergedSymList = foldl' (\a b -> a ++ toSymbolList b (startAddr + length a)) [] decls
     nameError = error "Non-unique variable declaration"
+
+-- | Array of decls ("type": [unit/ptr]) -> (LSymbolTable, nextAddr/size)
+genLSymbolTable :: [(String, [SymbolBase])] -> LSymbolTable
+genLSymbolTable decls = lSymbolTableHelper decls 0
+
+-- The args will have space BP - 4 and upwards
+genArgSymbolTable :: [(String, SymbolBase)] -> LSymbolTable
+genArgSymbolTable args = lSymbolTableHelper argMapped (-3 - length args)
+  where
+    argMapped = fmap (\(a, b) -> (a, [b])) args

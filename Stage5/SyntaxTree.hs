@@ -35,6 +35,9 @@ isInteger _ NodeArmc {} = True
 isInteger _ _ = False
 
 getVarType :: GSymbolTable -> SyntaxTree -> String
+getVarType st (LeafVar var Deref) = take (length t - 3) t -- Remove "ptr" from the end
+  where
+    t = getSymbolType (st Map.! var)
 getVarType st (LeafVar var _) = getSymbolType (st Map.! var)
 getVarType _ _ = error "Not a variable: "
 

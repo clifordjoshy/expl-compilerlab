@@ -3,13 +3,13 @@ all: Compiler
 Tokens.hs : Tokens.x
 	alex Tokens.x
 
-Grammar.hs : Grammar.y
-	happy Grammar.y
+Parser.hs : Parser.y
+	happy Parser.y
 
 LabelLink.hs : LabelLink.x
 	alex LabelLink.x
     
-Compiler : Tokens.hs Grammar.hs Compiler.hs SyntaxTree.hs SymbolTable.hs CodeGen.hs LabelLink.hs
+Compiler : Tokens.hs Parser.hs ParserState.hs Compiler.hs SyntaxTree.hs SymbolTable.hs LabelLink.hs XsmGen.hs
 	ghc --make Compiler -outputdir=__intermediate__
     
 clean:
