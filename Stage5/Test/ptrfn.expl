@@ -1,0 +1,39 @@
+decl
+  int* ptrtest(int *n);
+	int *x;
+  int arrb[5];
+enddecl
+
+int* ptrtest(int *n)
+{
+  decl
+    int *f, g;
+  enddecl
+  begin
+		write("received");
+		write(*n);
+		g = *n;
+		f = &g;
+		*n = g * *f;
+    return x;
+  end
+}
+
+int main()
+{
+  decl
+    int a, *b;
+  enddecl
+  begin
+    read(a);
+		x = &a;
+		b = x;
+    write(ptrtest(b));
+    if(a > 0) then
+      write("if okay");
+      arrb[a%5] = *b;
+      write(arrb[a%5]);
+    endif;
+    return 0;
+  end  
+}  

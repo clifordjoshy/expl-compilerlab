@@ -62,9 +62,6 @@ import SyntaxTree
 %left '+' '-'
 %left '*' '/' '%'
 
-%nonassoc LOWER
-%nonassoc HIGHER
-
 %%
 
 Program : GDeclBlock FDefBlock MainBlock      { ($1, $2, $3) }
@@ -105,8 +102,8 @@ Param : Type BaseVar                    { ($1, $2) }
 
 {- FUNCTION DEFINITION GRAMMAR -}
 
-FDefBlock : FDefBlock FDef                                       { $1 ++ [$2] }
-          | FDef                                                 { [$1] }
+FDefBlock : FDefBlock FDef                                           { $1 ++ [$2] }
+          | FDef                                                     { [$1] }
 
 FDef : FType FName '(' ParamList ')' '{' LDeclBlock Routine '}'      {% fnTypeCheck ($1, $2, $4, $7, $8) } 
 FType: Type                                                          { $1 }
@@ -131,10 +128,10 @@ Routine : BEGIN Slist Retstmt END       { NodeConn $2 $3 }
 
 Retstmt : RETURN RVal ';'               {% let (t, v) = $2 in (retTypeCheck t >> return (NodeReturn v)) }
 
-RVal : Variable       %prec HIGHER      {% varType $1 >>= \t -> return (t, $1) }
-     | FnCall         %prec HIGHER      {% fnType $1 >>= \t -> return (t, $1) }
+RVal : Variable                         {% varType $1 >>= \t -> return (t, $1) }
+     | FnCall                           {% fnType $1 >>= \t -> return (t, $1) }
      | String                           { ("str", $1) }
-     | E                                { ("int", $1) }
+     | E2                               { ("int", $1) }
      | '&' Variable                     {% varType $2 >>= \t -> return (t++"ptr", NodeRef $2) }
 
 Slist : Slist Stmt                      { NodeConn $1 $2 }
@@ -150,20 +147,22 @@ Stmt : READ '(' Variable ')' ';'                           { NodeStmt "Read" $3 
      | CONTINUE ';'                                        { NodeCont }
      | FnCall ';'                                          { $1 }
 
-E : E '+' E                             { NodeArmc '+' $1 $3 }
-  | E '-' E                             { NodeArmc '-' $1 $3 }
-  | E '*' E                             { NodeArmc '*' $1 $3 }
-  | E '/' E                             { NodeArmc '/' $1 $3 }
-  | E '%' E                             { NodeArmc '%' $1 $3 }
-  | '(' E ')'                           { $2 }
-  | int                                 { LeafValInt $1 }
-  | FnCall           %prec LOWER        {% intCheck $1 }
-  | Variable         %prec LOWER        {% intCheck $1 }
+E2 : E '+' E                            { NodeArmc '+' $1 $3 }
+   | E '-' E                            { NodeArmc '-' $1 $3 }
+   | E '*' E                            { NodeArmc '*' $1 $3 }
+   | E '/' E                            { NodeArmc '/' $1 $3 }
+   | E '%' E                            { NodeArmc '%' $1 $3 }
+   | '(' E2 ')'                         { $2 }
+   | int                                { LeafValInt $1 }
 
-FnCall: id '(' ArgList ')'              { LeafFn $1 $3 }
+E : E2                                  { $1 }
+  | FnCall                              {% intCheck $1 }
+  | Variable                            {% intCheck $1 }
 
-ArgList : ArgList ',' E                 { $1 ++ [$3] }
-        | E                             { [$1] }
+FnCall: id '(' ArgList ')'              {% fnCallTypeCheck $1 $3 >>= \p -> return (LeafFn $1 p)}
+
+ArgList : ArgList ',' RVal              { $1 ++ [$3] }
+        | RVal                          { [$1] }
         | {- empty -}                   { [] }
 
 B : E '<' E                             { NodeBool "<" $1 $3 }

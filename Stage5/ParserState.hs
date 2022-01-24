@@ -61,14 +61,26 @@ fnTypeCheck :: (String, String, [(String, SymbolBase)], LSymbolTable, SyntaxTree
 fnTypeCheck (t, name, params, lSym, tree) = do
   (_, cFn, _) <- get
   let (Func td pd _) = cFn
-  let baseToName b = case b of
-        (U n) -> n
-        (P n) -> n
-        _ -> error "Not a valid parameter"
-  let params2 = map (\(_, b) -> baseToName b) params
-  if t == td && params == pd
+      paramToTuple (t, v) = case v of
+        U n -> (t, n)
+        P n -> (t ++ "ptr", n)
+        _ -> error "Not a valid param"
+  let pc = map paramToTuple params
+  let params2 = map snd pc
+  if t == td && pc == pd
     then return (t, name, params2, lSym, tree)
     else error "Function definition does not match declaration"
+
+-- Typechecks and returns given fn defn with modified params
+fnCallTypeCheck :: String -> [(String, SyntaxTree)] -> State ParserState [SyntaxTree]
+fnCallTypeCheck name params = do
+  (gSymT, _, _) <- get
+  case Map.lookup name gSymT of
+    Just (Func _ p2 _) ->
+      if map fst params == map fst p2
+        then return (map snd params)
+        else error $ "Function call doesnt match definition: " ++ name ++ show (map fst params) ++ show ()
+    _ -> error $ "Function call is invalid: " ++ name
 
 retTypeCheck :: String -> State ParserState ()
 retTypeCheck t = do
@@ -84,7 +96,7 @@ assignTypeCheck n tc = do
 intCheck :: SyntaxTree -> State ParserState SyntaxTree
 intCheck n = do
   (_, _, symTab) <- get
-  if isInteger symTab n then return n else error $ "Integer value was expected : " ++ show n
+  if isInteger symTab n then return n else error $ "Integer value was expected on right side of assignment: " ++ show n
 
 symCheck :: (Symbol -> Bool) -> String -> State ParserState ()
 symCheck isSym n = do

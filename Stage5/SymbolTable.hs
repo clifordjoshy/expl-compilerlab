@@ -17,7 +17,7 @@ data Symbol
   = Unit String Int -- Type, Addr
   | Arr String Int Int -- Type, Size, Addr
   | Arr2 String Int Int Int -- Type, Size1, Size2, Addr
-  | Func String [(String, SymbolBase)] String -- Type, Params, Label
+  | Func String [(String, String)] String -- Type, Params, Label
   deriving (Show)
 
 type GSymbolTable = Map.Map String Symbol
@@ -61,6 +61,10 @@ baseToSymbolList (t, b : bs) addr labels = (sym : bsList, cAddr + size, remainin
   where
     (bsList, cAddr, labels2) = baseToSymbolList (t, bs) addr labels
     l : remainingLabels = labels2
+    paramToTuple (t, v) = case v of
+      U n -> (t, n)
+      P n -> (t ++ "ptr", n)
+      _ -> error "Not a valid param"
     size = case b of
       U _ -> 1
       A _ n -> n
@@ -72,8 +76,8 @@ baseToSymbolList (t, b : bs) addr labels = (sym : bsList, cAddr + size, remainin
       A name s -> (name, Arr t s cAddr)
       A2 name s1 s2 -> (name, Arr2 t s1 s2 cAddr)
       P name -> (name, Unit (t ++ "ptr") cAddr)
-      F name params -> (name, Func t params l)
-      PF name params -> (name, Func (t ++ "ptr") params l)
+      F name params -> (name, Func t (map paramToTuple params) l)
+      PF name params -> (name, Func (t ++ "ptr") (map paramToTuple params) l)
 
 -- | Array of decls ("type": [vars]) -> (GSymbolTable, freeAddr, fnLabels)
 genGSymbolTable :: [(String, [SymbolBase])] -> (GSymbolTable, Int, [String])
@@ -85,24 +89,23 @@ genGSymbolTable (d : ds) = (Map.unionWith nameError map1 map2, addrEnd, remainin
     map2 = Map.fromListWith nameError symbolList
     nameError = error "Non-unique variable declaration"
 
--- | Array of decls ("type": [unit/ptr]) -> startAddress -> LSymbolTable
-lSymbolTableHelper :: [(String, [SymbolBase])] -> Int -> LSymbolTable
-lSymbolTableHelper decls startAddr = Map.fromListWith nameError mergedSymList
+-- | Array of decls ("type": [unit/ptr]) -> LSymbolTable
+genLSymbolTable :: [(String, [SymbolBase])] -> LSymbolTable
+genLSymbolTable decls = Map.fromListWith nameError mergedSymList
   where
     toTableEntry t v a = case v of
       U n -> (n, (t, a))
       P n -> (n, (t ++ "ptr", a))
       _ -> error "Local variables can only be pointers or simple"
     toSymbolList (t, vars) sa = [toTableEntry t v i | (v, i) <- zip vars [sa ..]]
-    mergedSymList = foldl' (\a b -> a ++ toSymbolList b (startAddr + length a)) [] decls
+    mergedSymList = foldl' (\a b -> a ++ toSymbolList b (length a)) [] decls
     nameError = error "Non-unique variable declaration"
 
--- | Array of decls ("type": [unit/ptr]) -> (LSymbolTable, nextAddr/size)
-genLSymbolTable :: [(String, [SymbolBase])] -> LSymbolTable
-genLSymbolTable decls = lSymbolTableHelper decls 0
-
--- The args will have space BP - 4 and upwards
-genArgSymbolTable :: [(String, SymbolBase)] -> LSymbolTable
-genArgSymbolTable args = lSymbolTableHelper argMapped (-3 - length args)
+-- | The args will have space BP - 4 and upwards
+-- | [(type, name)] -> symboltable
+genArgSymbolTable :: [(String, String)] -> LSymbolTable
+genArgSymbolTable args = Map.fromListWith nameError symbolList
   where
-    argMapped = fmap (\(a, b) -> (a, [b])) args
+    startAddr = -3 - length args
+    symbolList = [(n, (t, i)) | ((t, n), i) <- zip args [startAddr ..]]
+    nameError = error "Non-unique argument declaration"
