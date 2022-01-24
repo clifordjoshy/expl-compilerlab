@@ -115,7 +115,8 @@ FName: id                                                            {% saveCurF
 
 
 LDeclBlock : DECL LDeclList ENDDECL     {% saveLTable $2 }
-           | DECL ENDDECL               { Map.empty }
+           | DECL ENDDECL               {% saveLTable [] }
+           | {- empty -}                {% saveLTable [] }
 
 LDeclList : LDeclList LDecl             { $1 ++ [$2] }
           | LDecl                       { [$1] }

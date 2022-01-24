@@ -15,9 +15,9 @@ startState = (Map.empty, Unit "" 0, Map.empty)
 saveGTable :: [(String, [SymbolBase])] -> State ParserState Int
 saveGTable decls = do
   (_, start1, start2) <- get
-  let (gSymTable, sp, _) = genGSymbolTable decls
+  let (gSymTable, spInc, _) = genGSymbolTable decls
   put (gSymTable, start1, start2)
-  return sp
+  return $ spInc - 1
 
 -- Saves and returns local symbol table
 saveLTable :: [(String, [SymbolBase])] -> State ParserState LSymbolTable
