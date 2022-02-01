@@ -1,0 +1,25 @@
+type
+  List
+  {
+    int data;
+    List next;
+  }
+endtype
+
+decl
+    List head;
+		int a[5];
+enddecl
+
+int main()
+{
+  decl
+    int length, x;
+    List p, q;
+  enddecl
+
+  begin
+		write(p.next.next.next.data);
+    return 1;
+  end
+}
