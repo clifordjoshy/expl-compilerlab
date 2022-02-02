@@ -195,12 +195,13 @@ B : E '<' E                             { NodeBool "<" $1 $3 }
   | E '>' E                             { NodeBool ">" $1 $3 }
   | E '<=' E                            { NodeBool "<=" $1 $3 } 
   | E '>=' E                            { NodeBool ">=" $1 $3 } 
-  | E '!=' E                            { NodeBool "!=" $1 $3 } 
   | Eq                                  { $1 }
 
-Eq : RVal '==' NULL                      {% let (t,v) = $1 in (userTypeCheck t >> return (NodeTEq v LeafNull)) } 
-   | NULL '==' RVal                      {% let (t,v) = $3 in (userTypeCheck t >> return (NodeTEq v LeafNull)) } 
-   | RVal '==' RVal                      {% return (let (t1,v1)=$1;(t2,v2)=$3 in if t1=="int" && t2=="int" then NodeBool "==" v1 v2 else NodeTEq v1 v2) }
+Eq : EqVal '==' EqVal                      { getEqNode True $1 $3 }
+   | EqVal '!=' EqVal                      { getEqNode False $1 $3 }
+
+EqVal : RVal                             { $1 }
+      | NULL                             { ("null", LeafNull) }
 
 Variable : id                           {% symCheck (isUnit) $1 >> return (LeafVar $1 Simple) }
          | id '[' E ']'                 {% symCheck (isArr) $1 >> return (LeafVar $1 (Index $3)) }
@@ -220,6 +221,12 @@ MainBlock : INT Main '(' ')' '{' LDeclBlock Routine '}'      { ($6, $7) }
 Main: MAIN                                                   {% saveMainFn }
 
 {
+
+getEqNode :: Bool -> (String, SyntaxTree) -> (String, SyntaxTree) -> SyntaxTree
+getEqNode eqOp (t1, v1) (t2, v2) = case (t1, t2) of
+  ("int", "int") -> NodeBool (if eqOp then "==" else "!=") v1 v2
+  ("str", "str") -> NodeBool (if eqOp then "==" else "!=") v1 v2
+  _ -> NodeTEq eqOp v1 v2
 
 parseError t = error $ "Parse error: " ++ show t
 

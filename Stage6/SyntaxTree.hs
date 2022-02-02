@@ -25,7 +25,7 @@ data SyntaxTree
   | NodeFree SyntaxTree
   | NodeArmc Char SyntaxTree SyntaxTree
   | NodeBool String SyntaxTree SyntaxTree
-  | NodeTEq SyntaxTree SyntaxTree
+  | NodeTEq Bool SyntaxTree SyntaxTree
   | NodeAssign SyntaxTree SyntaxTree
   | NodeConn SyntaxTree SyntaxTree
   | NodeIf SyntaxTree SyntaxTree
@@ -61,7 +61,7 @@ toDataTree :: SyntaxTree -> Tree String
 toDataTree t = case t of
   NodeArmc c l r -> Node ("Arithmetic " ++ [c]) [toDataTree l, toDataTree r]
   NodeBool c l r -> Node ("Boolean " ++ c) [toDataTree l, toDataTree r]
-  NodeTEq l r -> Node "Type Eq" [toDataTree l, toDataTree r]
+  NodeTEq e l r -> Node ("Type Eq-" ++ show e) [toDataTree l, toDataTree r]
   NodeConn l r -> Node "NodeConn" [toDataTree l, toDataTree r]
   NodeAssign l r -> Node "Assign" [toDataTree l, toDataTree r]
   NodeIf cond bl -> Node "If" [toDataTree cond, toDataTree bl]
