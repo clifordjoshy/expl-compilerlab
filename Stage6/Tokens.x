@@ -32,6 +32,8 @@ tokens :-
   end             { \_ -> TokenEnd }
   read            { \_ -> TokenRead }
   write           { \_ -> TokenWrite }
+  alloc           { \_ -> TokenAlloc }
+  free            { \_ -> TokenFree }
   if              { \_ -> TokenIf }
   then            { \_ -> TokenThen }
   else            { \_ -> TokenElse }
@@ -49,7 +51,8 @@ tokens :-
   return          { \_ -> TokenReturn }
   type            { \_ -> TokenType }
   endtype         { \_ -> TokenEndType }
-  NULL            { \_ -> TokenNull }
+  null            { \_ -> TokenNull }
+  initialize      { \_ -> TokenInitialize }
   @varName        { \s -> TokenVar s }
   \[              { \_ -> TokenLBox }
   \]              { \_ -> TokenRBox }
@@ -82,6 +85,8 @@ data Token = TokenIntVal Int
            | TokenEnd
            | TokenRead
            | TokenWrite
+           | TokenAlloc
+           | TokenFree
            | TokenIf
            | TokenThen
            | TokenElse
@@ -108,6 +113,7 @@ data Token = TokenIntVal Int
            | TokenType
            | TokenEndType
            | TokenNull
+           | TokenInitialize
            deriving (Show)
 
 scanTokens = alexScanTokens

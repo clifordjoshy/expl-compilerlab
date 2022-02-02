@@ -19,7 +19,12 @@ int main()
   enddecl
 
   begin
-		write(p.next.next.next.data);
+    p = alloc();
+    free(p);
+    initialize();
+    if(head.next.next == head) then
+		  write(p.next.next.next.data);
+    endif;
     return 1;
   end
 }

@@ -14,53 +14,56 @@ import SyntaxTree
 %monad { State ParserState }
 
 %token
-    int       { TokenIntVal $$ }
-    str       { TokenStrVal $$ }
-    id        { TokenVar $$ }
-    '+'       { TokenPlus }
-    '-'       { TokenMinus }
-    '*'       { TokenTimes }
-    '/'       { TokenDiv }
-    '%'       { TokenMod }
-    '('       { TokenLParen }
-    ')'       { TokenRParen }
-    '['       { TokenLBox }
-    ']'       { TokenRBox }
-    '{'       { TokenLCurly }
-    '}'       { TokenRCurly }
-    '&'       { TokenAddr }
-    '='       { TokenAssign }
-    '<'       { TokenLt }
-    '>'       { TokenGt }
-    '<='      { TokenLtE }
-    '>='      { TokenGtE }
-    '!='      { TokenNE }
-    '=='      { TokenEq }
-    '.'       { TokenDot }
-    BEGIN     { TokenBegin }
-    END       { TokenEnd }
-    READ      { TokenRead }
-    WRITE     { TokenWrite }
-    IF        { TokenIf }
-    THEN      { TokenThen }
-    ELSE      { TokenElse }
-    ENDIF     { TokenEndif }
-    WHILE     { TokenWhile }
-    DO        { TokenDo }
-    ENDWHILE  { TokenEndwhile }
-    BREAK     { TokenBreak }
-    CONTINUE  { TokenCont }
-    INT       { TokenInt }
-    STR       { TokenStr }
-    DECL      { TokenDecl }
-    ENDDECL   { TokenEndDecl }
-    TYPE      { TokenType }
-    ENDTYPE   { TokenEndType }
-    MAIN      { TokenMain }
-    RETURN    { TokenReturn }
-    NULL      { TokenNull }
-    ','       { TokenComma }
-    ';'       { TokenStmtEnd }
+    int            { TokenIntVal $$ }
+    str            { TokenStrVal $$ }
+    id             { TokenVar $$ }
+    '+'            { TokenPlus }
+    '-'            { TokenMinus }
+    '*'            { TokenTimes }
+    '/'            { TokenDiv }
+    '%'            { TokenMod }
+    '('            { TokenLParen }
+    ')'            { TokenRParen }
+    '['            { TokenLBox }
+    ']'            { TokenRBox }
+    '{'            { TokenLCurly }
+    '}'            { TokenRCurly }
+    '&'            { TokenAddr }
+    '='            { TokenAssign }
+    '<'            { TokenLt }
+    '>'            { TokenGt }
+    '<='           { TokenLtE }
+    '>='           { TokenGtE }
+    '!='           { TokenNE }
+    '=='           { TokenEq }
+    '.'            { TokenDot }
+    BEGIN          { TokenBegin }
+    END            { TokenEnd }
+    READ           { TokenRead }
+    WRITE          { TokenWrite }
+    ALLOC          { TokenAlloc }
+    FREE           { TokenFree }
+    INITIALIZE     { TokenInitialize }
+    IF             { TokenIf }
+    THEN           { TokenThen }
+    ELSE           { TokenElse }
+    ENDIF          { TokenEndif }
+    WHILE          { TokenWhile }
+    DO             { TokenDo }
+    ENDWHILE       { TokenEndwhile }
+    BREAK          { TokenBreak }
+    CONTINUE       { TokenCont }
+    INT            { TokenInt }
+    STR            { TokenStr }
+    DECL           { TokenDecl }
+    ENDDECL        { TokenEndDecl }
+    TYPE           { TokenType }
+    ENDTYPE        { TokenEndType }
+    MAIN           { TokenMain }
+    RETURN         { TokenReturn }
+    NULL           { TokenNull }
+    ','            { TokenComma }
+    ';'            { TokenStmtEnd }
 
 %nonassoc '==' '!=' '>' '<' '>=' '<='
 %left '+' '-'
@@ -156,15 +159,19 @@ RVal : Variable                         {% varType $1 >>= \t -> return (t, $1) }
 Slist : Slist Stmt                      { NodeConn $1 $2 }
       | Stmt                            { $1 }
 
-Stmt : READ '(' Variable ')' ';'                           { NodeStmt "Read" $3 }
+Stmt : READ '(' Variable ')' ';'                           { NodeRead $3 }
      | Variable '=' RVal ';'                               {% let (t, v) = $3 in (assignTypeCheck $1 t >> return (NodeAssign $1 v)) } 
-     | WRITE '(' RVal ')' ';'                              { let (t, v) = $3 in NodeStmt "Write" v } 
+     | WRITE '(' RVal ')' ';'                              { let (t, v) = $3 in NodeWrite v } 
      | IF '(' B ')' THEN Slist ENDIF ';'                   { NodeIf $3 $6 }
      | IF '(' B ')' THEN Slist ELSE Slist ENDIF ';'        { NodeIfElse $3 $6 $8 }
      | WHILE '(' B ')' DO Slist ENDWHILE ';'               { NodeWhile $3 $6 }
      | BREAK ';'                                           { NodeBreak }
      | CONTINUE ';'                                        { NodeCont }
      | FnCall ';'                                          { $1 }
+     | Variable '=' ALLOC '(' ')' ';'                      {% varType $1 >>= userTypeCheck >> return (NodeAlloc $1) } 
+     | Variable '=' NULL ';'                               {% varType $1 >>= userTypeCheck >> return (NodeAssign $1 LeafNull) } 
+     | FREE '(' RVal ')' ';'                               {% let (t, v) = $3 in (userTypeCheck t >> return (NodeFree v)) } 
+     | INITIALIZE '(' ')' ';'                              { NodeInitialize } 
 
 E2 : E '+' E                            { NodeArmc '+' $1 $3 }
    | E '-' E                            { NodeArmc '-' $1 $3 }
@@ -189,7 +196,11 @@ B : E '<' E                             { NodeBool "<" $1 $3 }
   | E '<=' E                            { NodeBool "<=" $1 $3 } 
   | E '>=' E                            { NodeBool ">=" $1 $3 } 
   | E '!=' E                            { NodeBool "!=" $1 $3 } 
-  | E '==' E                            { NodeBool "==" $1 $3 } 
+  | Eq                                  { $1 }
+
+Eq : RVal '==' NULL                      {% let (t,v) = $1 in (userTypeCheck t >> return (NodeTEq v LeafNull)) } 
+   | NULL '==' RVal                      {% let (t,v) = $3 in (userTypeCheck t >> return (NodeTEq v LeafNull)) } 
+   | RVal '==' RVal                      {% return (let (t1,v1)=$1;(t2,v2)=$3 in if t1=="int" && t2=="int" then NodeBool "==" v1 v2 else NodeTEq v1 v2) }
 
 Variable : id                           {% symCheck (isUnit) $1 >> return (LeafVar $1 Simple) }
          | id '[' E ']'                 {% symCheck (isArr) $1 >> return (LeafVar $1 (Index $3)) }

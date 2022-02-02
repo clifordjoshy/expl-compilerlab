@@ -18,9 +18,14 @@ data SyntaxTree
   | LeafFn String [SyntaxTree]
   | LeafValInt Int
   | LeafValStr String
-  | NodeStmt String SyntaxTree
+  | LeafNull
+  | NodeRead SyntaxTree
+  | NodeWrite SyntaxTree
+  | NodeAlloc SyntaxTree
+  | NodeFree SyntaxTree
   | NodeArmc Char SyntaxTree SyntaxTree
   | NodeBool String SyntaxTree SyntaxTree
+  | NodeTEq SyntaxTree SyntaxTree
   | NodeAssign SyntaxTree SyntaxTree
   | NodeConn SyntaxTree SyntaxTree
   | NodeIf SyntaxTree SyntaxTree
@@ -29,6 +34,7 @@ data SyntaxTree
   | NodeRef SyntaxTree
   | NodeBreak
   | NodeCont
+  | NodeInitialize
   | NodeReturn SyntaxTree
   deriving (Show)
 
@@ -53,16 +59,18 @@ getFnType _ _ = error "Not a function"
 
 toDataTree :: SyntaxTree -> Tree String
 toDataTree t = case t of
-  NodeStmt c s -> Node c [toDataTree s]
   NodeArmc c l r -> Node ("Arithmetic " ++ [c]) [toDataTree l, toDataTree r]
   NodeBool c l r -> Node ("Boolean " ++ c) [toDataTree l, toDataTree r]
+  NodeTEq l r -> Node "Type Eq" [toDataTree l, toDataTree r]
   NodeConn l r -> Node "NodeConn" [toDataTree l, toDataTree r]
   NodeAssign l r -> Node "Assign" [toDataTree l, toDataTree r]
   NodeIf cond bl -> Node "If" [toDataTree cond, toDataTree bl]
   NodeIfElse cond bl1 bl2 -> Node "If Else" [toDataTree cond, toDataTree bl1, toDataTree bl2]
   NodeWhile cond bl -> Node "While" [toDataTree cond, toDataTree bl]
-  NodeBreak -> Node "Break" []
-  NodeCont -> Node "Continue" []
+  NodeRead t -> Node "Read" [toDataTree t]
+  NodeWrite t -> Node "Write" [toDataTree t]
+  NodeAlloc t -> Node "Alloc" [toDataTree t]
+  NodeFree t -> Node "Free" [toDataTree t]
   _ -> Node (show t) []
 
 prettyPrint :: SyntaxTree -> String

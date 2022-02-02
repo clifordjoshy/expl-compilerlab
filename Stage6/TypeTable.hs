@@ -26,6 +26,8 @@ getTypeSize tTable tName = length $ tTable Map.! tName
 areValidTypes :: TypeTable -> [String] -> Bool
 areValidTypes tTable = all tCheck
   where
+    tCheck "int" = True
+    tCheck "str" = True
     tCheck t = case Map.lookup t tTable of
       Just _ -> True
       Nothing -> error $ "Type '" ++ t ++ "' not recognized."
@@ -37,7 +39,7 @@ genTypeTable tList =
     then tTable
     else error "This error shouldn't be thrown #1"
   where
-    tTable = Map.fromListWith nameError $ ("int", []) : ("str", []) : tList
+    tTable = Map.fromListWith nameError tList
     nameError = error "Non-unique type name"
     fieldsVerify :: [Field] -> Bool
     fieldsVerify fields = areValidTypes tTable $ map fst fields

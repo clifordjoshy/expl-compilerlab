@@ -1,9 +1,6 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-
-{-# HLINT ignore "Use when" #-}
 module ParserState where
 
-import Control.Monad.State (MonadState (get, put), State, void)
+import Control.Monad.State (MonadState (get, put), State, unless)
 import Data.Bifunctor (second)
 import qualified Data.Map as Map
 import SymbolTable
@@ -114,14 +111,18 @@ assignTypeCheck n tc = do
   t <- varType n
   if t == tc then return () else error $ "Cannot assign " ++ tc ++ " to " ++ t
 
+userTypeCheck :: String -> State ParserState ()
+userTypeCheck tName = do
+  (tt, _, _, _) <- get
+  case Map.lookup tName tt of
+    Just _ -> return ()
+    Nothing -> error $ "Cannot do heap operations on " ++ tName
+
 dotSymCheck :: String -> [String] -> State ParserState ()
 dotSymCheck symName dots = do
   (tTable, _, _, symTab) <- get
   case Map.lookup symName symTab of
-    Just s ->
-      if resolveDotType tTable (getSymbolType s) dots == ""
-        then error ""
-        else return ()
+    Just s -> unless (null (resolveDotType tTable (getSymbolType s) dots)) (return ())
     Nothing -> error $ "Variable does not exist : " ++ symName
 
 intCheck :: SyntaxTree -> State ParserState SyntaxTree
