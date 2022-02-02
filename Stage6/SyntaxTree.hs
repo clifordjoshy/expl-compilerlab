@@ -21,6 +21,7 @@ data SyntaxTree
   | LeafNull
   | NodeRead SyntaxTree
   | NodeWrite SyntaxTree
+  | NodeInitialize
   | NodeAlloc SyntaxTree
   | NodeFree SyntaxTree
   | NodeArmc Char SyntaxTree SyntaxTree
@@ -34,7 +35,6 @@ data SyntaxTree
   | NodeRef SyntaxTree
   | NodeBreak
   | NodeCont
-  | NodeInitialize
   | NodeReturn SyntaxTree
   deriving (Show)
 
@@ -55,6 +55,11 @@ getVarType _ _ _ = error "Not a variable"
 
 getFnType :: GSymbolTable -> SyntaxTree -> String
 getFnType st (LeafFn name _) = getSymbolType (st Map.! name)
+getFnType st (NodeRead _) = "int"
+getFnType st (NodeWrite _) = "int"
+getFnType st NodeInitialize = "int"
+getFnType st (NodeFree _) = "int"
+getFnType st (NodeAlloc _) = "int"
 getFnType _ _ = error "Not a function"
 
 toDataTree :: SyntaxTree -> Tree String

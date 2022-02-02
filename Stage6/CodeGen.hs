@@ -50,6 +50,17 @@ genValResolveCode name Deref regs gst lst =
     (symReg, regs3) = getReg regs2
     (tempReg, _) = getReg regs3
     symCode = symbolResolve name symReg gst lst
+-- genValResolveCode name (Dot dotList) regs gst lst =
+--   ( symCode ++ dotResolvCode,
+--     valReg,
+--     regs2
+--   )
+--   where
+--     (valReg, regs2) = getReg regs
+--     (symReg, regs3) = getReg regs2
+--     (tempReg, _) = getReg regs3
+--     symCode = symbolResolve name symReg gst lst
+--     dotResolvCode = foldl' (b -> a -> b) b dotList
 genValResolveCode name (Index i) regs gst lst =
   ( symCode
       ++ iCode
@@ -150,28 +161,14 @@ genCode a@Args {node = (LeafVar var resolver)} = (code, r, rs, labels)
   where
     Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst} = a
     (code, r, rs) = genValResolveCode var resolver regsFree gst lst
-genCode a@Args {node = (LeafFn name params)} =
-  ( pushRegCode
-      ++ pushArgCode
-      ++ genStackXsm PUSH "R0"
-      ++ genCallXsm (accessLabel fnLabel)
-      ++ genStackXsm POP returnReg
-      ++ popArgCode
-      ++ popRegCode,
-    returnReg,
-    rs,
-    labels
-  )
+genCode a@Args {node = (LeafFn name params)} = (genFnCallXsm usedRegs fnLabel argCodes returnReg, returnReg, rs, labels)
   where
     Args {regsFree = regsFree, labels = labels, gSymTable = gst} = a
     usedRegs = getRegsUsed regsFree
-    pushRegCode = concatMap (genStackXsm PUSH) usedRegs
     getArgCode p = let (pCode, pReg, _, _) = genCode a {node = p} in pCode ++ genStackXsm PUSH pReg
-    pushArgCode = concatMap getArgCode params
-    (Func _ _ fnLabel) = gst Map.! name
+    argCodes = map getArgCode params
+    fnLabel = let (Func _ _ fl) = gst Map.! name in accessLabel fl
     (returnReg, rs) = getReg regsFree
-    popArgCode = concat $ replicate (length params) $ genStackXsm POP (head rs)
-    popRegCode = concatMap (genStackXsm POP) (reverse usedRegs)
 genCode a@Args {node = (NodeRef (LeafVar var resolver))} = (argCode, r, rem, labels)
   where
     Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst} = a
@@ -186,22 +183,27 @@ genCode a@Args {node = (NodeBool op l r)} = (lCode ++ rCode ++ genBoolXsm op lRe
     (lCode, lReg, regRemaining, _) = genCode a {node = l}
     (rCode, rReg, _, _) = genCode a {node = r, regsFree = regRemaining}
     Args {labels = labels} = a
-genCode a@Args {node = (NodeAssign (LeafVar var varResolver) r)} = (rCode ++ lCode ++ genMovXsm (genMemAccXsm lReg) rReg, "", regsFree, labels)
+genCode a@Args {node = (NodeAssign (LeafVar var varResolver) r)} = (code, "", regsFree, labels)
   where
     (rCode, rReg, regs2, _) = genCode a {node = r}
     (lCode, lReg, _) = genAddrResolveCode var varResolver regs2 gst lst
+    code = rCode ++ lCode ++ genMovXsm (genMemAccXsm lReg) rReg
     Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst} = a
-genCode a@Args {node = (NodeStmt "Write" arg)} = (argCode ++ genLibXsm "Write" libArgs (head regRemaining), "", regsFree, labels)
+genCode a@Args {node = (NodeWrite arg)} = (argCode ++ genLibXsm usedRegs "Write" libArgs retReg, retReg, regsRem, labels)
   where
-    (argCode, argReg, regRemaining, _) = genCode a {node = arg}
-    libArgs = (ValInt $ -2, Reg argReg, None)
     Args {regsFree = regsFree, labels = labels} = a
-genCode a@Args {node = (NodeStmt "Read" arg)} = (argCode ++ genLibXsm "Read" libArgs (head regRem), "", regsFree, labels)
+    usedRegs = getRegsUsed regsFree
+    (argCode, argReg, _, _) = genCode a {node = arg}
+    libArgs = (ValInt $ -2, Reg argReg, None)
+    (retReg, regsRem) = getReg regsFree
+genCode a@Args {node = (NodeRead arg)} = (argCode ++ genLibXsm usedRegs "Read" libArgs retReg, retReg, regsFree, labels)
   where
-    libArgs = (ValInt $ -1, Reg argReg, None)
+    Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst} = a
+    usedRegs = getRegsUsed regsFree
     (LeafVar var varResolver) = arg
     (argCode, argReg, regRem) = genAddrResolveCode var varResolver regsFree gst lst
-    Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst} = a
+    libArgs = (ValInt $ -1, Reg argReg, None)
+    (retReg, regsRem) = getReg regsFree
 genCode a@Args {node = (NodeIf cond exec)} =
   ( condCode ++ genJmpZXsm condReg endLabel ++ blockCode ++ genLabelXsm endLabel,
     "",
@@ -243,12 +245,12 @@ genCode a@Args {node = (NodeWhile cond exec)} =
     (condCode, condReg, _, _) = genCode a {node = cond}
     (blockCode, _, _, remainingLabels) = genCode a {node = exec, labels = labels3, blockLabels = Just (label, endLabel)}
     Args {regsFree = regsFree, labels = labels} = a
-genCode Args {node = NodeBreak, regsFree = fr, labels = lb, blockLabels = bl} = (code, "", fr, lb)
+genCode a@Args {node = NodeBreak, regsFree = fr, labels = lb, blockLabels = bl} = (code, "", fr, lb)
   where
     code = case bl of
       Nothing -> ""
       Just (_, el) -> genJmpXsm el
-genCode Args {node = NodeCont, regsFree = fr, labels = lb, blockLabels = bl} = (code, "", fr, lb)
+genCode a@Args {node = NodeCont, regsFree = fr, labels = lb, blockLabels = bl} = (code, "", fr, lb)
   where
     code = case bl of
       Nothing -> ""

@@ -68,30 +68,35 @@ genCallXsm lbl = "CALL " ++ lbl ++ "\n"
 genRetXsm :: String
 genRetXsm = "RET\n"
 
+-- | Generates xsm for a fn call
+-- | usedRegs -> FunctionLabel(accessed) -> [code for pushing each arg] -> returnReg -> Code
+genFnCallXsm :: [String] -> String -> [String] -> String -> String
+genFnCallXsm usedRegs fnLabel argCodes returnReg =
+  pushRegCode
+    ++ pushArgCode
+    ++ genStackXsm PUSH "R0"
+    ++ genCallXsm fnLabel
+    ++ genStackXsm POP returnReg
+    ++ popArgCode
+    ++ popRegCode
+  where
+    pushRegCode = concatMap (genStackXsm PUSH) usedRegs
+    pushArgCode = concat argCodes
+    -- popArgCode = concat $ replicate (length argCodes) $ genStackXsm POP (head rs)
+    popArgCode = genArmcXsm '-' "SP" (show $length argCodes)
+    popRegCode = concatMap (genStackXsm POP) (reverse usedRegs)
+
 data LibCallArg = ValInt Int | ValString String | Reg String | None
 
--- | Function Code -> (3 arguments) -> tempRegister -> Code
 -- | Generates library call XSM
-genLibXsm :: String -> (LibCallArg, LibCallArg, LibCallArg) -> String -> String
-genLibXsm fnCode (a1, a2, a3) tempReg =
-  evalCodeFn ++ genStackXsm PUSH cReg
-    ++ (evalCode1 ++ genStackXsm PUSH arg1)
-    ++ (evalCode2 ++ genStackXsm PUSH arg2)
-    ++ (evalCode3 ++ genStackXsm PUSH arg3)
-    ++ genStackXsm PUSH "R0"
-    ++ genCallXsm "0"
-    ++ genStackXsm POP tempReg
-    ++ genStackXsm POP tempReg
-    ++ genStackXsm POP tempReg
-    ++ genStackXsm POP tempReg
-    ++ genStackXsm POP tempReg
+-- | UsedRegs -> FunctionCode -> (3 arguments) -> retRegister -> Code
+genLibXsm :: [String] -> String -> (LibCallArg, LibCallArg, LibCallArg) -> String -> String
+genLibXsm usedRegs fnCode (a1, a2, a3) retReg = genFnCallXsm usedRegs "0" argCodes retReg
   where
-    (evalCode1, arg1) = evalArg a1 tempReg
-    (evalCode2, arg2) = evalArg a2 tempReg
-    (evalCode3, arg3) = evalArg a3 tempReg
-    (evalCodeFn, cReg) = evalArg (ValString fnCode) tempReg
-    evalArg argType tempReg = case argType of
-      (ValInt val) -> (genMovXsm tempReg $show val, tempReg)
-      (ValString val) -> (genMovXsm tempReg $show val, tempReg)
-      (Reg r) -> ("", r)
-      None -> ("", "R0")
+    evalArg :: LibCallArg -> String
+    evalArg argType = case argType of
+      (ValInt val) -> genMovXsm retReg $show val ++ genStackXsm PUSH retReg
+      (ValString val) -> genMovXsm retReg $show val ++ genStackXsm PUSH retReg
+      (Reg r) -> genStackXsm PUSH r
+      None -> ""
+    argCodes = [evalArg a1, evalArg a2, evalArg a3]

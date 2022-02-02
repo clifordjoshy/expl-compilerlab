@@ -159,9 +159,7 @@ RVal : Variable                         {% varType $1 >>= \t -> return (t, $1) }
 Slist : Slist Stmt                      { NodeConn $1 $2 }
       | Stmt                            { $1 }
 
-Stmt : READ '(' Variable ')' ';'                           { NodeRead $3 }
-     | Variable '=' RVal ';'                               {% let (t, v) = $3 in (assignTypeCheck $1 t >> return (NodeAssign $1 v)) } 
-     | WRITE '(' RVal ')' ';'                              { let (t, v) = $3 in NodeWrite v } 
+Stmt : Variable '=' RVal ';'                               {% let (t, v) = $3 in (assignTypeCheck $1 t >> return (NodeAssign $1 v)) } 
      | IF '(' B ')' THEN Slist ENDIF ';'                   { NodeIf $3 $6 }
      | IF '(' B ')' THEN Slist ELSE Slist ENDIF ';'        { NodeIfElse $3 $6 $8 }
      | WHILE '(' B ')' DO Slist ENDWHILE ';'               { NodeWhile $3 $6 }
@@ -170,8 +168,6 @@ Stmt : READ '(' Variable ')' ';'                           { NodeRead $3 }
      | FnCall ';'                                          { $1 }
      | Variable '=' ALLOC '(' ')' ';'                      {% varType $1 >>= userTypeCheck >> return (NodeAlloc $1) } 
      | Variable '=' NULL ';'                               {% varType $1 >>= userTypeCheck >> return (NodeAssign $1 LeafNull) } 
-     | FREE '(' RVal ')' ';'                               {% let (t, v) = $3 in (userTypeCheck t >> return (NodeFree v)) } 
-     | INITIALIZE '(' ')' ';'                              { NodeInitialize } 
 
 E2 : E '+' E                            { NodeArmc '+' $1 $3 }
    | E '-' E                            { NodeArmc '-' $1 $3 }
@@ -186,6 +182,10 @@ E : E2                                  { $1 }
   | Variable                            {% intCheck $1 }
 
 FnCall: id '(' ArgList ')'              {% fnCallTypeCheck $1 $3 >>= \p -> return (LeafFn $1 p)}
+      | READ '(' Variable ')'           { NodeRead $3 }
+      | WRITE '(' RVal ')'              { let (t, v) = $3 in NodeWrite v } 
+      | FREE '(' RVal ')'               {% let (t, v) = $3 in (userTypeCheck t >> return (NodeFree v)) } 
+      | INITIALIZE '(' ')'              { NodeInitialize } 
 
 ArgList : ArgList ',' RVal              { $1 ++ [$3] }
         | RVal                          { [$1] }
