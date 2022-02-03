@@ -28,7 +28,7 @@ areValidTypes tTable = all tCheck
   where
     tCheck "int" = True
     tCheck "str" = True
-    tCheck t = case Map.lookup t tTable of
+    tCheck t = case Map.lookup (if last t == '*' then init t else t) tTable of
       Just _ -> True
       Nothing -> error $ "Type '" ++ t ++ "' not recognized."
 

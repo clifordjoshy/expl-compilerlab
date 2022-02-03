@@ -1,0 +1,54 @@
+type
+  dataT {
+		int a;
+		dataT b;
+	}
+endtype
+
+decl
+  dataT arr[5], func(dataT *arg), h;
+enddecl
+
+dataT func(dataT *arg)
+{
+  begin
+		*arg = alloc();
+		h = *arg;
+		h.a = 8;
+		h.b = h;
+		return null;
+  end
+}
+
+int main()
+{
+  decl
+		dataT *ptr, px;
+	enddecl
+
+  begin
+    initialize();
+		arr[0] = alloc();
+		arr[1] = alloc();
+		arr[2] = alloc();
+		arr[3] = alloc();
+		arr[4] = alloc();
+
+		ptr = &arr[1];
+		px = *ptr;
+		px.a = 5;
+		write(px.a);
+    write(func(ptr));
+		px = arr[1];
+		write(px.b.b.b.b.b.a);
+		arr[0] = *ptr;
+		if(arr[0] == arr[1]) then
+			write("equality works");
+		endif;
+		if(arr[0] == "no") then
+			write ("equality no work");
+		endif;
+
+  return 0;
+  end
+}

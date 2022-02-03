@@ -137,8 +137,8 @@ dotSymCheck symName dots = do
 
 intCheck :: SyntaxTree -> State ParserState SyntaxTree
 intCheck n = do
-  (_, _, _, symTab) <- get
-  if isInteger symTab n then return n else error $ "Integer value was expected on right side of assignment: " ++ show n
+  (tt, _, _, symTab) <- get
+  if isInteger symTab tt n then return n else error $ "Integer value was expected: " ++ show n
 
 symCheck :: (Symbol -> Bool) -> String -> State ParserState ()
 symCheck isSym n = do

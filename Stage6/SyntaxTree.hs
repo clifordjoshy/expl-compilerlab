@@ -38,15 +38,14 @@ data SyntaxTree
   deriving (Show)
 
 -- | Returns if a given constructor evaluates to an integer value
-isInteger :: GSymbolTable -> SyntaxTree -> Bool
-isInteger st (LeafVar var Deref) = getSymbolType (st Map.! var) == "int*"
-isInteger st (LeafVar var _) = getSymbolType (st Map.! var) == "int"
-isInteger st (LeafFn name _) = getSymbolType (st Map.! name) == "int"
-isInteger _ LeafValInt {} = True
-isInteger _ NodeArmc {} = True
-isInteger _ _ = False
+isInteger :: GSymbolTable -> TypeTable -> SyntaxTree -> Bool
+isInteger st tt v@(LeafVar _ _) = getVarType st tt v == "int"
+isInteger st _ f@(LeafFn _ _) = getFnType st f == "int"
+isInteger _ _ LeafValInt {} = True
+isInteger _ _ NodeArmc {} = True
+isInteger _ _ _ = False
 
--- Used in ParserState. Takes merged sym table
+-- Used in ParserState. Takes merged sym table. (check lvalue)
 getVarType :: GSymbolTable -> TypeTable -> SyntaxTree -> String
 getVarType st _ (LeafVar var Deref) = init $ getSymbolType (st Map.! var) -- Remove "*" from the end
 getVarType st tt (LeafVar var (Dot dotList)) = resolveDotType tt (getSymbolType (st Map.! var)) dotList

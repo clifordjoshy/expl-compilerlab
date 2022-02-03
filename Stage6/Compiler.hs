@@ -20,10 +20,10 @@ main = do
   inputFile <- openFile (head args) ReadMode
   fileContents <- hGetContents inputFile
   let (tTable, gTable, sp, fDecl, main) = parseTokens (scanTokens fileContents)
-  print gTable
-  print tTable
+  -- print gTable
+  -- print tTable
   -- print fDecl
-  let (_, mainAst) = main in putStr $ prettyPrint mainAst
+  -- let (_, mainAst) = main in putStr $ prettyPrint mainAst
   let code = codeGen gTable sp tTable fDecl main
   createOutputFile code
   hClose inputFile
