@@ -8,8 +8,8 @@ type Field = (String, String) -- TypeName, VarName
 
 type TypeTable = Map.Map String [Field] -- Name -> TypeInfo
 
--- | Check if a list of dot access is valid on a given type
--- | TypeTable -> startType -> [DotList] -> String
+-- | Check if a list of dot access is valid on a given type and returns final type
+-- | TypeTable -> startType -> [DotList] -> FinalType
 resolveDotType :: TypeTable -> String -> [String] -> String
 resolveDotType tTable = foldl' childType
   where

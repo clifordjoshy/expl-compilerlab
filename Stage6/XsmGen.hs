@@ -33,8 +33,8 @@ genMovXsm :: String -> String -> String
 genMovXsm dest source = "MOV " ++ dest ++ ", " ++ source ++ "\n"
 
 -- | Surrounds a given string in [] for memory access
-genMemAccXsm :: String -> String
-genMemAccXsm v = "[" ++ v ++ "]"
+accessMem :: String -> String
+accessMem v = "[" ++ v ++ "]"
 
 -- Appends : to the end defining a label
 genLabelXsm :: String -> String
@@ -68,13 +68,16 @@ genCallXsm lbl = "CALL " ++ lbl ++ "\n"
 genRetXsm :: String
 genRetXsm = "RET\n"
 
+genIncSpXsm :: String
+genIncSpXsm = "INR SP\n"
+
 -- | Generates xsm for a fn call
 -- | usedRegs -> FunctionLabel(accessed) -> [code for pushing each arg] -> returnReg -> Code
 genFnCallXsm :: [String] -> String -> [String] -> String -> String
 genFnCallXsm usedRegs fnLabel argCodes returnReg =
   pushRegCode
     ++ pushArgCode
-    ++ genStackXsm PUSH "R0"
+    ++ genIncSpXsm
     ++ genCallXsm fnLabel
     ++ genStackXsm POP returnReg
     ++ popArgCode
@@ -95,8 +98,9 @@ genLibXsm usedRegs fnCode (a1, a2, a3) retReg = genFnCallXsm usedRegs "0" argCod
   where
     evalArg :: LibCallArg -> String
     evalArg argType = case argType of
-      (ValInt val) -> genMovXsm retReg $show val ++ genStackXsm PUSH retReg
-      (ValString val) -> genMovXsm retReg $show val ++ genStackXsm PUSH retReg
+      (ValInt val) -> genMovXsm retReg (show val) ++ genStackXsm PUSH retReg
+      (ValString val) -> genMovXsm retReg (show val) ++ genStackXsm PUSH retReg
       (Reg r) -> genStackXsm PUSH r
-      None -> ""
-    argCodes = [evalArg a1, evalArg a2, evalArg a3]
+      None -> genIncSpXsm
+    fnCodeCode = genMovXsm retReg (show fnCode) ++ genStackXsm PUSH retReg
+    argCodes = [fnCodeCode, evalArg a1, evalArg a2, evalArg a3]

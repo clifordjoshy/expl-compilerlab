@@ -155,6 +155,7 @@ RVal : Variable                         {% varType $1 >>= \t -> return (t, $1) }
      | String                           { ("str", $1) }
      | E2                               { ("int", $1) }
      | '&' Variable                     {% varType $2 >>= \t -> return (t++"*", NodeRef $2) }
+     | NULL                             { ("null", LeafNull) }
 
 Slist : Slist Stmt                      { NodeConn $1 $2 }
       | Stmt                            { $1 }
@@ -167,7 +168,6 @@ Stmt : Variable '=' RVal ';'                               {% let (t, v) = $3 in
      | CONTINUE ';'                                        { NodeCont }
      | FnCall ';'                                          { $1 }
      | Variable '=' ALLOC '(' ')' ';'                      {% varType $1 >>= userTypeCheck >> return (NodeAlloc $1) } 
-     | Variable '=' NULL ';'                               {% varType $1 >>= userTypeCheck >> return (NodeAssign $1 LeafNull) } 
 
 E2 : E '+' E                            { NodeArmc '+' $1 $3 }
    | E '-' E                            { NodeArmc '-' $1 $3 }
@@ -191,17 +191,12 @@ ArgList : ArgList ',' RVal              { $1 ++ [$3] }
         | RVal                          { [$1] }
         | {- empty -}                   { [] }
 
-B : E '<' E                             { NodeBool "<" $1 $3 }
-  | E '>' E                             { NodeBool ">" $1 $3 }
-  | E '<=' E                            { NodeBool "<=" $1 $3 } 
-  | E '>=' E                            { NodeBool ">=" $1 $3 } 
-  | Eq                                  { $1 }
-
-Eq : EqVal '==' EqVal                      { getEqNode True $1 $3 }
-   | EqVal '!=' EqVal                      { getEqNode False $1 $3 }
-
-EqVal : RVal                             { $1 }
-      | NULL                             { ("null", LeafNull) }
+B : RVal '<' RVal                       { NodeBool "<" (snd $1) (snd $3) }
+  | RVal '>' RVal                       { NodeBool ">" (snd $1) (snd $3) }
+  | RVal '<=' RVal                      { NodeBool "<=" (snd $1) (snd $3) } 
+  | RVal '>=' RVal                      { NodeBool ">=" (snd $1) (snd $3) } 
+  | RVal '==' RVal                      { NodeBool "==" (snd $1) (snd $3) }
+  | RVal '!=' RVal                      { NodeBool "!=" (snd $1) (snd $3) }
 
 Variable : id                           {% symCheck (isUnit) $1 >> return (LeafVar $1 Simple) }
          | id '[' E ']'                 {% symCheck (isArr) $1 >> return (LeafVar $1 (Index $3)) }
@@ -221,12 +216,6 @@ MainBlock : INT Main '(' ')' '{' LDeclBlock Routine '}'      { ($6, $7) }
 Main: MAIN                                                   {% saveMainFn }
 
 {
-
-getEqNode :: Bool -> (String, SyntaxTree) -> (String, SyntaxTree) -> SyntaxTree
-getEqNode eqOp (t1, v1) (t2, v2) = case (t1, t2) of
-  ("int", "int") -> NodeBool (if eqOp then "==" else "!=") v1 v2
-  ("str", "str") -> NodeBool (if eqOp then "==" else "!=") v1 v2
-  _ -> NodeTEq eqOp v1 v2
 
 parseError t = error $ "Parse error: " ++ show t
 

@@ -55,6 +55,11 @@ getSymbolAddress (Arr _ _ a) = a
 getSymbolAddress (Arr2 _ _ _ a) = a
 getSymbolAddress _ = error "No address for function"
 
+findSymbolType :: String -> LSymbolTable -> GSymbolTable -> String
+findSymbolType name lst gst = case Map.lookup name lst of
+  Just (t, _) -> t
+  Nothing -> getSymbolType (gst Map.! name)
+
 -- | Base declarations -> typetable -> startAddress -> mapFunction -> errorMsg -> (SymbolTable, Size)
 symbolTableHelper :: forall tVal. [(String, [SymbolBase])] -> Int -> (String -> SymbolBase -> Int -> (String, tVal)) -> String -> (Map.Map String tVal, Int)
 symbolTableHelper decls sa toTableEntry eMsg = (Map.fromListWith (error eMsg) symList, size)

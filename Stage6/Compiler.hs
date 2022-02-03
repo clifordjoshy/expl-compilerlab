@@ -1,6 +1,6 @@
 module Main where
 
--- import CodeGen (codeGen)
+import CodeGen (codeGen)
 import Parser (parseTokens)
 import SymbolTable
 import SyntaxTree
@@ -24,6 +24,6 @@ main = do
   print tTable
   -- print fDecl
   let (_, mainAst) = main in putStr $ prettyPrint mainAst
-  -- let code = codeGen gTable sp fDecl main
-  -- createOutputFile code
+  let code = codeGen gTable sp tTable fDecl main
+  createOutputFile code
   hClose inputFile

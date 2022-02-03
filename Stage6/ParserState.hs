@@ -89,27 +89,37 @@ fnTypeCheck (t, name, params, lSym, tree) = do
     then return (t, name, params2, lSym, tree)
     else error "Function definition does not match declaration"
 
+tEq :: String -> String -> Bool
+tEq t1 t2 = case (t1, t2) of
+  ("null", t) -> isUserType t
+  (t, "null") -> isUserType t
+  (ta, tb) -> ta == tb
+  where
+    isUserType "int" = False
+    isUserType "str" = False
+    isUserType _ = True
+
 -- Typechecks and returns given fn defn with modified params
 fnCallTypeCheck :: String -> [(String, SyntaxTree)] -> State ParserState [SyntaxTree]
 fnCallTypeCheck name params = do
   (_, gSymT, _, _) <- get
   case Map.lookup name gSymT of
     Just (Func _ p2 _) ->
-      if map fst params == map fst p2
+      if (length params == length p2) && and (zipWith (\(t1, _) (t2, _) -> tEq t1 t2) params p2)
         then return (map snd params)
-        else error $ "Function call doesnt match definition: " ++ name ++ show (map fst params) ++ show ()
+        else error $ "Function call doesnt match definition: " ++ name ++ show (map fst params)
     _ -> error $ "Function call is invalid: " ++ name
 
 retTypeCheck :: String -> State ParserState ()
 retTypeCheck t = do
   (_, _, cFn, _) <- get
   let (Func td _ _) = cFn
-  if t == td then return () else error $ "Function returns " ++ t ++ " instead of " ++ td
+  if t `tEq` td then return () else error $ "Function returns " ++ t ++ " instead of " ++ td
 
 assignTypeCheck :: SyntaxTree -> String -> State ParserState ()
 assignTypeCheck n tc = do
   t <- varType n
-  if t == tc then return () else error $ "Cannot assign " ++ tc ++ " to " ++ t
+  if t `tEq` tc then return () else error $ "Cannot assign " ++ tc ++ " to " ++ t
 
 userTypeCheck :: String -> State ParserState ()
 userTypeCheck tName = do
