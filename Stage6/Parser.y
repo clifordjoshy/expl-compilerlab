@@ -167,7 +167,7 @@ Stmt : Variable '=' RVal ';'                               {% let (t, v) = $3 in
      | BREAK ';'                                           { NodeBreak }
      | CONTINUE ';'                                        { NodeCont }
      | FnCall ';'                                          { $1 }
-     | Variable '=' ALLOC '(' ')' ';'                      {% varType $1 >>= userTypeCheck >> return (NodeAlloc $1) } 
+     | Variable '=' ALLOC '(' ')' ';'                      {% varType $1 >>= \t -> (userTypeCheck t >> typeSize t) >>= \s -> return (NodeAlloc $1 s) } 
 
 E2 : E '+' E                            { NodeArmc '+' $1 $3 }
    | E '-' E                            { NodeArmc '-' $1 $3 }
@@ -202,7 +202,7 @@ Variable : id                           {% symCheck (isUnit) $1 >> return (LeafV
          | id '[' E ']'                 {% symCheck (isArr) $1 >> return (LeafVar $1 (Index $3)) }
          | id '['E']' '['E']'           {% symCheck (isArr2) $1 >> return (LeafVar $1 (Index2D $3 $6)) }
          | '*' id                       {% symCheck (isPtr) $2 >> return (LeafVar $2 Deref) }
-         | DotField                     {% let n:d = $1 in (dotSymCheck n d >> return(LeafVar n (Dot d))) }
+         | DotField                     {% (let n:ds = $1 in dotSymCheck n ds >>= \di -> return (LeafVar n (Dot di))) }
 
 DotField : DotField '.' id              { $1 ++ [$3] }
          | id '.' id                    { [$1, $3] }
@@ -219,7 +219,7 @@ Main: MAIN                                                   {% saveMainFn }
 
 parseError t = error $ "Parse error: " ++ show t
 
-parseTokens tokenStream = (tTable, gSymFull, sp, fDecl, main)
+parseTokens tokenStream = (gSymFull, sp, fDecl, main)
   where
     ((sp, fDecl, main), (tTable, gSymTable, _, _)) = runState (parse tokenStream) startState
     gSymFull = Map.insertWith (error "Main function declared twice") "main" (Func "int" [] "main") gSymTable

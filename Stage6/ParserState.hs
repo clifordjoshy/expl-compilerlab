@@ -1,6 +1,6 @@
 module ParserState where
 
-import Control.Monad.State (MonadState (get, put), State, unless)
+import Control.Monad.State (MonadState (get, put), State)
 import Data.Bifunctor (second)
 import qualified Data.Map as Map
 import SymbolTable
@@ -110,6 +110,14 @@ fnCallTypeCheck name params = do
         else error $ "Function call doesnt match definition: " ++ name ++ show (map fst params)
     _ -> error $ "Function call is invalid: " ++ name
 
+-- Typechecks and returns modified index dotfields
+dotSymCheck :: String -> [String] -> State ParserState [Int]
+dotSymCheck symName dots = do
+  (tTable, _, _, symTab) <- get
+  case Map.lookup symName symTab of
+    Just s -> return $ dotStrToIndex tTable (getSymbolType s) dots
+    Nothing -> error $ "Variable does not exist : " ++ symName
+
 retTypeCheck :: String -> State ParserState ()
 retTypeCheck t = do
   (_, _, cFn, _) <- get
@@ -128,13 +136,6 @@ userTypeCheck tName = do
     Just _ -> return ()
     Nothing -> error $ "Cannot do heap operations on " ++ tName
 
-dotSymCheck :: String -> [String] -> State ParserState ()
-dotSymCheck symName dots = do
-  (tTable, _, _, symTab) <- get
-  case Map.lookup symName symTab of
-    Just s -> unless (null (resolveDotType tTable (getSymbolType s) dots)) (return ())
-    Nothing -> error $ "Variable does not exist : " ++ symName
-
 intCheck :: SyntaxTree -> State ParserState SyntaxTree
 intCheck n = do
   (tt, _, _, symTab) <- get
@@ -151,6 +152,11 @@ varType :: SyntaxTree -> State ParserState String
 varType n = do
   (tt, _, _, symTab) <- get
   return $ getVarType symTab tt n
+
+typeSize :: String -> State ParserState Int
+typeSize tName = do
+  (tt, _, _, _) <- get
+  return $ getTypeSize tt tName
 
 fnType :: SyntaxTree -> State ParserState String
 fnType n = do

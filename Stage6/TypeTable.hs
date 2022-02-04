@@ -10,13 +10,23 @@ type TypeTable = Map.Map String [Field] -- Name -> TypeInfo
 
 -- | Check if a list of dot access is valid on a given type and returns final type
 -- | TypeTable -> startType -> [DotList] -> FinalType
-resolveDotType :: TypeTable -> String -> [String] -> String
-resolveDotType tTable = foldl' childType
+resolveDotType :: TypeTable -> String -> [Int] -> String
+resolveDotType tTable = foldl' (\pType cIndex -> fst ((tTable Map.! pType) !! cIndex))
+
+-- | Converts a dot list of strings to field indices
+-- | TypeTable -> startType -> stringFields -> indexFields
+dotStrToIndex :: TypeTable -> String -> [String] -> [Int]
+dotStrToIndex tTable startType fields = intFields
   where
-    childType :: String -> String -> String
-    childType pType cName = case find ((cName ==) . snd) (tTable Map.! pType) of
-      Just (tName, _) -> tName
-      Nothing -> error $ "Type " ++ pType ++ " does not contain child " ++ cName
+    mapFn :: String -> String -> (String, Int)
+    mapFn pType cName = (cType, childIndex)
+      where
+        pFields = tTable Map.! pType
+        (childIndex, (cType, _)) = case findIndex ((cName ==) . snd) pFields of
+          Just i -> (i, pFields !! i)
+          Nothing -> error $ "Type " ++ pType ++ " does not contain child " ++ cName
+
+    (_, intFields) = mapAccumL mapFn startType fields
 
 -- | Returns the size of a given type string
 getTypeSize :: TypeTable -> String -> Int

@@ -7,7 +7,6 @@ import qualified Data.Map as Map
 import LabelLink (replaceLabels)
 import SymbolTable
 import SyntaxTree
-import TypeTable
 import XsmGen
 
 allRegs :: [String]
@@ -26,42 +25,38 @@ getRegsUsed freeRegs = allRegs \\ freeRegs
 
 -- | resolves a symbol name and returns the address in a register
 -- | symName -> reg -> globalSymbolT -> localSymbolT -> (code, sym)
-symbolResolve :: String -> String -> GSymbolTable -> LSymbolTable -> (String, String)
+symbolResolve :: String -> String -> GSymbolTable -> LSymbolTable -> String
 symbolResolve name r gst lst = case Map.lookup name lst of
-  Just (lType, lAddr) -> (lType, genMovXsm r "BP" ++ genArmcXsm '+' r (show lAddr))
-  Nothing -> let sym = gst Map.! name in (getSymbolType sym, genMovXsm r (show $ getSymbolAddress sym))
+  Just (lType, lAddr) -> genMovXsm r "BP" ++ genArmcXsm '+' r (show lAddr)
+  Nothing -> let sym = gst Map.! name in genMovXsm r (show $ getSymbolAddress sym)
 
 -- | Resolves a dot field and returns code. Stores final address in passed register
--- | tTable -> startType -> reg(with sym address) -> dotlist -> tempReg -> Code
-dotResolve :: TypeTable -> String -> String -> [String] -> String -> String
-dotResolve _ _ _ [] _ = ""
-dotResolve tTable p r (c : ds) tempReg = code ++ dotResolve tTable cType r ds tempReg
+-- | dotlist -> reg(with sym address) -> tempReg -> Code
+dotResolve :: [Int] -> String -> String -> String
+dotResolve [] _ _ = ""
+dotResolve (c : ds) r tempReg = code ++ dotResolve ds r tempReg
   where
-    pFields = tTable Map.! p
-    (childIndex, (cType, _)) = case findIndex ((c ==) . snd) pFields of
-      Just i -> (i, pFields !! i)
-      Nothing -> error "Shouldn't be an error"
-    code = genMovXsm tempReg (accessMem r) ++ genArmcXsm '+' tempReg (show childIndex) ++ genMovXsm r tempReg
+    code = genMovXsm tempReg (accessMem r) ++ genArmcXsm '+' tempReg (show c) ++ genMovXsm r tempReg
 
 -- | varName -> resolver -> freeRegs -> GSymbolTable -> LSymbolTable -> (code, reg, remainingRegs)
 -- | Returns code to resolve a variable address and stores the address in a register
-genAddrResolveCode :: String -> VarResolve -> [String] -> GSymbolTable -> LSymbolTable -> TypeTable -> (String, String, [String])
-genAddrResolveCode name Simple regs gst lst _ = (symCode, symReg, regs2)
+genAddrResolveCode :: String -> VarResolve -> [String] -> GSymbolTable -> LSymbolTable -> (String, String, [String])
+genAddrResolveCode name Simple regs gst lst = (symCode, symReg, regs2)
   where
     (symReg, regs2) = getReg regs
-    (_, symCode) = symbolResolve name symReg gst lst
-genAddrResolveCode name Deref regs gst lst _ = (symCode ++ genMovXsm valReg (accessMem symReg), valReg, regs2)
+    symCode = symbolResolve name symReg gst lst
+genAddrResolveCode name Deref regs gst lst = (symCode ++ genMovXsm valReg (accessMem symReg), valReg, regs2)
   where
     (valReg, regs2) = getReg regs
     (symReg, regs3) = getReg regs2
-    (_, symCode) = symbolResolve name symReg gst lst
-genAddrResolveCode name (Dot dotList) regs gst lst tTable = (symCode ++ dotCode, valReg, regs2)
+    symCode = symbolResolve name symReg gst lst
+genAddrResolveCode name (Dot dotList) regs gst lst = (symCode ++ dotCode, valReg, regs2)
   where
     (valReg, regs2) = getReg regs
     (tempReg, _) = getReg regs2
-    (symType, symCode) = symbolResolve name valReg gst lst
-    dotCode = dotResolve tTable symType valReg dotList tempReg
-genAddrResolveCode name (Index i) regs gst lst _ =
+    symCode = symbolResolve name valReg gst lst
+    dotCode = dotResolve dotList valReg tempReg
+genAddrResolveCode name (Index i) regs gst lst =
   ( symCode
       ++ iCode
       ++ genArmcXsm '+' symReg iReg,
@@ -71,8 +66,8 @@ genAddrResolveCode name (Index i) regs gst lst _ =
   where
     (symReg, regs2) = getReg regs
     (iCode, iReg, _, _) = genCode Args {node = i, regsFree = regs2, gSymTable = gst, lSymTable = lst}
-    (_, symCode) = symbolResolve name symReg gst lst
-genAddrResolveCode name (Index2D i j) regs gst lst _ =
+    symCode = symbolResolve name symReg gst lst
+genAddrResolveCode name (Index2D i j) regs gst lst =
   ( symCode
       ++ iCode
       ++ jCode
@@ -85,17 +80,17 @@ genAddrResolveCode name (Index2D i j) regs gst lst _ =
   where
     (symReg, regs2) = getReg regs
     (iCode, iReg, regs3, _) = genCode Args {node = i, regsFree = regs2, gSymTable = gst, lSymTable = lst, labels = [], blockLabels = Nothing}
-    (_, symCode) = symbolResolve name symReg gst lst
+    symCode = symbolResolve name symReg gst lst
     (Arr2 _ m n _) = gst Map.! name
     (jCode, jReg, _, _) = genCode Args {node = j, regsFree = regs3, gSymTable = gst, lSymTable = lst, labels = [], blockLabels = Nothing}
 
--- | varName -> resolver -> freeRegs -> GSymbolTable -> LSymbolTable -> TypeTable -> (code, reg, remainingRegs)
+-- | varName -> resolver -> freeRegs -> GSymbolTable -> LSymbolTable -> (code, reg, remainingRegs)
 -- | Returns code to resolve a variable value and stores the value in a register
-genValResolveCode :: String -> VarResolve -> [String] -> GSymbolTable -> LSymbolTable -> TypeTable -> (String, String, [String])
-genValResolveCode name resolv regs gst lst tt = (addrCode ++ genMovXsm valReg (accessMem addrReg), valReg, rs)
+genValResolveCode :: String -> VarResolve -> [String] -> GSymbolTable -> LSymbolTable -> (String, String, [String])
+genValResolveCode name resolv regs gst lst = (addrCode ++ genMovXsm valReg (accessMem addrReg), valReg, rs)
   where
     (valReg, rs) = getReg regs
-    (addrCode, addrReg, _) = genAddrResolveCode name resolv rs gst lst tt
+    (addrCode, addrReg, _) = genAddrResolveCode name resolv rs gst lst
 
 data CodeArgs = Args
   { node :: SyntaxTree,
@@ -103,8 +98,7 @@ data CodeArgs = Args
     labels :: [String],
     blockLabels :: Maybe (String, String),
     gSymTable :: GSymbolTable,
-    lSymTable :: LSymbolTable,
-    tTable :: TypeTable
+    lSymTable :: LSymbolTable
   }
 
 -- | syntaxTree -> freeRegisters -> labels -> Maybe (startLabel, endLabel) -> (code, usedregister, remainingRegisters, remainingLabels)
@@ -125,8 +119,8 @@ genCode a@Args {node = LeafNull} = (genMovXsm r "0", r, remainingRegs, labels)
     Args {regsFree = regsFree, labels = labels} = a
 genCode a@Args {node = (LeafVar var resolver)} = (code, r, rs, labels)
   where
-    Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst, tTable = tt} = a
-    (code, r, rs) = genValResolveCode var resolver regsFree gst lst tt
+    Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst} = a
+    (code, r, rs) = genValResolveCode var resolver regsFree gst lst
 genCode a@Args {node = (LeafFn name params)} = (genFnCallXsm usedRegs fnLabel argCodes returnReg, returnReg, rs, labels)
   where
     Args {regsFree = regsFree, labels = labels, gSymTable = gst} = a
@@ -139,8 +133,8 @@ genCode a@Args {node = (LeafFn name params)} = (genFnCallXsm usedRegs fnLabel ar
 -- Operator Nodes
 genCode a@Args {node = (NodeRef (LeafVar var resolver))} = (argCode, r, rem, labels)
   where
-    Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst, tTable = tt} = a
-    (argCode, r, rem) = genAddrResolveCode var resolver regsFree gst lst tt
+    Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst} = a
+    (argCode, r, rem) = genAddrResolveCode var resolver regsFree gst lst
 genCode a@Args {node = (NodeArmc op l r)} = (lCode ++ rCode ++ genArmcXsm op lReg rReg, lReg, regRemaining, labels)
   where
     (lCode, lReg, regRemaining, _) = genCode a {node = l}
@@ -209,9 +203,9 @@ genCode a@Args {node = NodeCont, regsFree = fr, labels = lb, blockLabels = bl} =
 genCode a@Args {node = (NodeAssign (LeafVar var varResolver) r)} = (code, "", regsFree, labels)
   where
     (rCode, rReg, regs2, _) = genCode a {node = r}
-    (lCode, lReg, _) = genAddrResolveCode var varResolver regs2 gst lst tt
+    (lCode, lReg, _) = genAddrResolveCode var varResolver regs2 gst lst
     code = rCode ++ lCode ++ genMovXsm (accessMem lReg) rReg
-    Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst, tTable = tt} = a
+    Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst} = a
 genCode a@Args {node = (NodeConn l r)} = (lCode ++ rCode, rReg, regsFree, remainingLabels)
   where
     (lCode, _, _, labels2) = genCode a {node = l}
@@ -232,10 +226,10 @@ genCode a@Args {node = (NodeWrite arg)} = (argCode ++ genLibXsm usedRegs "Write"
     (retReg, regsRem) = getReg regsFree
 genCode a@Args {node = (NodeRead arg)} = (argCode ++ genLibXsm usedRegs "Read" libArgs retReg, retReg, regsRem, labels)
   where
-    Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst, tTable = tt} = a
+    Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst} = a
     usedRegs = getRegsUsed regsFree
     (LeafVar var varResolver) = arg
-    (argCode, argReg, regRem) = genAddrResolveCode var varResolver regsRem gst lst tt
+    (argCode, argReg, regRem) = genAddrResolveCode var varResolver regsRem gst lst
     libArgs = (ValInt $ -1, Reg argReg, None)
     (retReg, regsRem) = getReg regsFree
 genCode a@Args {node = NodeInitialize} = (genLibXsm usedRegs "Heapset" libArgs retReg, retReg, regsRem, labels)
@@ -244,14 +238,13 @@ genCode a@Args {node = NodeInitialize} = (genLibXsm usedRegs "Heapset" libArgs r
     usedRegs = getRegsUsed regsFree
     libArgs = (None, None, None)
     (retReg, regsRem) = getReg regsFree
-genCode a@Args {node = (NodeAlloc var@(LeafVar vName vRes))} = (code, "", regsFree, labels)
+genCode a@Args {node = (NodeAlloc var@(LeafVar vName vRes) size)} = (code, "", regsFree, labels)
   where
-    Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst, tTable = tTable} = a
+    Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst} = a
     usedRegs = getRegsUsed regsFree
-    varSize = getTypeSize tTable $ findVarType gst lst tTable var
-    libArgs = (ValInt varSize, None, None)
+    libArgs = (ValInt size, None, None)
     (retReg, regsRem) = getReg regsFree
-    (lCode, lReg, _) = genAddrResolveCode vName vRes regsRem gst lst tTable
+    (lCode, lReg, _) = genAddrResolveCode vName vRes regsRem gst lst
     code = genLibXsm usedRegs "Alloc" libArgs retReg ++ lCode ++ genMovXsm (accessMem lReg) retReg
 genCode a@Args {node = (NodeFree var)} = (varCode ++ genLibXsm usedRegs "Free" libArgs retReg, retReg, regsRem, labels)
   where
@@ -270,8 +263,8 @@ type FDef = (String, String, [String], LSymbolTable, SyntaxTree)
 
 -- Generates code for a function
 -- FDef -> GSymbolTable -> labels -> (remainingLabels, code)
-genFnCode :: FDef -> GSymbolTable -> TypeTable -> [String] -> ([String], String)
-genFnCode (_, name, params, lSym, ast) gSym tTable labels =
+genFnCode :: FDef -> GSymbolTable -> [String] -> ([String], String)
+genFnCode (_, name, params, lSym, ast) gSym labels =
   ( remainingLabels,
     genLabelXsm label
       ++ genStackXsm PUSH "BP"
@@ -297,19 +290,18 @@ genFnCode (_, name, params, lSym, ast) gSym tTable labels =
             labels = labels,
             blockLabels = Nothing,
             gSymTable = gSym,
-            lSymTable = lSym,
-            tTable = tTable
+            lSymTable = lSym
           }
     lVarRelCode = concat $ replicate lVarCount (genStackXsm POP "R0")
 
--- GSymbolTable -> sp -> typetable -> fDecls -> mainBlock -> code
-codeGen :: GSymbolTable -> Int -> TypeTable -> [FDef] -> (LSymbolTable, SyntaxTree) -> String
-codeGen gTable sp tTable fDecls main = header ++ code
+-- GSymbolTable -> sp -> fDecls -> mainBlock -> code
+codeGen :: GSymbolTable -> Int -> [FDef] -> (LSymbolTable, SyntaxTree) -> String
+codeGen gTable sp fDecls main = header ++ code
   where
     header = unlines $ map show [0, 2056, 0, 0, 0, 0, 0, 0]
-    (labelsRem, codeList) = mapAccumL (\a b -> genFnCode b gTable tTable a) ["L" ++ show i | i <- [0, 1 ..]] fDecls
+    (labelsRem, codeList) = mapAccumL (\a b -> genFnCode b gTable a) ["L" ++ show i | i <- [0, 1 ..]] fDecls
     (mainLSym, mainAst) = main
-    (_, mainCode) = genFnCode ("int", "main", [], mainLSym, mainAst) gTable tTable labelsRem
+    (_, mainCode) = genFnCode ("int", "main", [], mainLSym, mainAst) gTable labelsRem
     (initCode, _, _, _) = genCode Args {node = LeafFn "main" [], regsFree = allRegs, gSymTable = gTable}
     labelledCode = genMovXsm "SP" (show sp) ++ initCode ++ "INT 10\n" ++ concat codeList ++ mainCode
     -- code = labelledCode

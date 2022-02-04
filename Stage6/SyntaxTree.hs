@@ -10,7 +10,7 @@ data VarResolve
   | Deref
   | Index SyntaxTree
   | Index2D SyntaxTree SyntaxTree
-  | Dot [String]
+  | Dot [Int]
   deriving (Show)
 
 data SyntaxTree
@@ -22,7 +22,7 @@ data SyntaxTree
   | NodeRead SyntaxTree
   | NodeWrite SyntaxTree
   | NodeInitialize
-  | NodeAlloc SyntaxTree
+  | NodeAlloc SyntaxTree Int
   | NodeFree SyntaxTree
   | NodeArmc Char SyntaxTree SyntaxTree
   | NodeBool String SyntaxTree SyntaxTree
@@ -65,7 +65,7 @@ getFnType st (NodeRead _) = "int"
 getFnType st (NodeWrite _) = "int"
 getFnType st NodeInitialize = "int"
 getFnType st (NodeFree _) = "int"
-getFnType st (NodeAlloc _) = "int"
+getFnType st (NodeAlloc _ _) = "int"
 getFnType _ _ = error "Not a function"
 
 toDataTree :: SyntaxTree -> Tree String
@@ -79,7 +79,7 @@ toDataTree t = case t of
   NodeWhile cond bl -> Node "While" [toDataTree cond, toDataTree bl]
   NodeRead t -> Node "Read" [toDataTree t]
   NodeWrite t -> Node "Write" [toDataTree t]
-  NodeAlloc t -> Node "Alloc" [toDataTree t]
+  NodeAlloc t s -> Node ("Alloc " ++ show s) [toDataTree t]
   NodeFree t -> Node "Free" [toDataTree t]
   _ -> Node (show t) []
 
