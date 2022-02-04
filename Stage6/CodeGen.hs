@@ -30,14 +30,6 @@ symbolResolve name r gst lst = case Map.lookup name lst of
   Just (lType, lAddr) -> genMovXsm r "BP" ++ genArmcXsm '+' r (show lAddr)
   Nothing -> let sym = gst Map.! name in genMovXsm r (show $ getSymbolAddress sym)
 
--- | Resolves a dot field and returns code. Stores final address in passed register
--- | dotlist -> reg(with sym address) -> tempReg -> Code
-dotResolve :: [Int] -> String -> String -> String
-dotResolve [] _ _ = ""
-dotResolve (c : ds) r tempReg = code ++ dotResolve ds r tempReg
-  where
-    code = genMovXsm tempReg (accessMem r) ++ genArmcXsm '+' tempReg (show c) ++ genMovXsm r tempReg
-
 -- | varName -> resolver -> freeRegs -> GSymbolTable -> LSymbolTable -> (code, reg, remainingRegs)
 -- | Returns code to resolve a variable address and stores the address in a register
 genAddrResolveCode :: String -> VarResolve -> [String] -> GSymbolTable -> LSymbolTable -> (String, String, [String])
@@ -55,7 +47,13 @@ genAddrResolveCode name (Dot dotList) regs gst lst = (symCode ++ dotCode, valReg
     (valReg, regs2) = getReg regs
     (tempReg, _) = getReg regs2
     symCode = symbolResolve name valReg gst lst
-    dotCode = dotResolve dotList valReg tempReg
+    dotFn :: String -> Int -> String
+    dotFn code c =
+      code
+        ++ genMovXsm tempReg (accessMem valReg)
+        ++ genArmcXsm '+' tempReg (show c)
+        ++ genMovXsm valReg tempReg
+    dotCode = foldl' dotFn "" dotList
 genAddrResolveCode name (Index i) regs gst lst =
   ( symCode
       ++ iCode
