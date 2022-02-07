@@ -220,7 +220,12 @@ classTypeSize cName = do
 
 intCheck :: SyntaxTree -> State ParserState SyntaxTree
 intCheck n = do
-  ParserState {tTable = tt, lTable = symTab, cTable = ct} <- get
+  ParserState {tTable = tt, lTable = lSymT, cTable = ct, curClass = curClass} <- get
+  let classSymT = case curClass of
+        Just cName -> snd $ ct Map.! cName
+        Nothing -> Map.empty
+      (LeafVar varName _) = n
+      symTab = if varName == "self" then classSymT else lSymT
   if isInteger symTab tt ct n then return n else error $ "Integer value was expected: " ++ show n
 
 symCheck :: (Symbol -> Bool) -> String -> State ParserState ()
@@ -239,11 +244,13 @@ selfCheck = do
 
 varType :: SyntaxTree -> State ParserState String
 varType n = do
-  ParserState {tTable = tt, lTable = symTab, curClass = curClass, cTable = ct} <- get
+  ParserState {tTable = tt, lTable = lSymT, curClass = curClass, cTable = ct} <- get
   let classSymT = case curClass of
         Just cName -> snd $ ct Map.! cName
         Nothing -> Map.empty
-  return $ getVarType symTab tt classSymT n
+      (LeafVar varName _) = n
+      symTab = if varName == "self" then classSymT else lSymT
+  return $ getVarType symTab tt n
 
 fnType :: SyntaxTree -> State ParserState String
 fnType n = do
