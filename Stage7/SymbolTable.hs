@@ -49,11 +49,19 @@ isArr2 :: Symbol -> Bool
 isArr2 Arr2 {} = True
 isArr2 _ = False
 
+isFunc :: Symbol -> Bool
+isFunc Func {} = True
+isFunc _ = False
+
 getSymbolAddress :: Symbol -> Int
 getSymbolAddress (Unit _ a) = a
 getSymbolAddress (Arr _ _ a) = a
 getSymbolAddress (Arr2 _ _ _ a) = a
 getSymbolAddress _ = error "No address for function"
+
+getFuncLabel :: Symbol -> String
+getFuncLabel (Func _ _ label) = label
+getFuncLabel _ = error "Can't get label for non-function"
 
 findSymbolType :: String -> LSymbolTable -> GSymbolTable -> String
 findSymbolType name lst gst = case Map.lookup name lst of
@@ -97,11 +105,16 @@ genGSymbolTable decls = symbolTableHelper decls 4096 toGEntry eMsg
   where
     eMsg = "Non-unique global declaration"
 
-genClassSymbolTable :: [(String, SymbolBase)] -> GSymbolTable
-genClassSymbolTable mems = fst $ symbolTableHelper memsMapped 0 toGEntry eMsg
+genClassSymbolTable :: String -> [(String, SymbolBase)] -> GSymbolTable
+genClassSymbolTable cName mems = Map.map labelTransform cst1
   where
     memsMapped = map (\(a, b) -> (a, [b])) mems
     eMsg = "Non-unique members in class"
+    cst1 = fst $ symbolTableHelper memsMapped 0 toGEntry eMsg
+    -- label should be of the form ClassName.MethodName
+    labelTransform sym = case sym of
+      (Func t p l) -> Func t p (cName ++ "." ++ l)
+      s -> s
 
 -- | Array of decls ("type": [unit/ptr])  -> LSymbolTable
 genLSymbolTable :: [(String, [SymbolBase])] -> LSymbolTable

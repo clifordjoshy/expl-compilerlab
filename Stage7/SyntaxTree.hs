@@ -11,20 +11,19 @@ data VarResolve
   | Index SyntaxTree
   | Index2D SyntaxTree SyntaxTree
   | Dot [Int]
-  | DotSelf Symbol [Int]
   deriving (Show)
 
 data SyntaxTree
-  = LeafVar String VarResolve
-  | LeafFn String [SyntaxTree]
-  | LeafMtd String String [SyntaxTree]
+  = LeafVar String VarResolve -- VarName, Resolver
+  | LeafFn String [SyntaxTree] -- FnLabel, Params
+  | LeafMtd String String [SyntaxTree] -- InstanceName, FnLabel, Params
   | LeafValInt Int
   | LeafValStr String
   | LeafNull
   | NodeRead SyntaxTree
   | NodeWrite SyntaxTree
   | NodeInitialize
-  | NodeAlloc SyntaxTree Int
+  | NodeAlloc SyntaxTree Int -- AllocVar, AllocSize
   | NodeFree SyntaxTree
   | NodeArmc Char SyntaxTree SyntaxTree
   | NodeBool String SyntaxTree SyntaxTree
@@ -41,24 +40,33 @@ data SyntaxTree
 
 -- | Returns if a given constructor evaluates to an integer value
 isInteger :: GSymbolTable -> TypeTable -> ClassTable -> SyntaxTree -> Bool
-isInteger st tt _ v@(LeafVar _ _) = getVarType st tt v == "int"
+isInteger st tt ct v@(LeafVar name _) = getVarType st tt (snd $ ct Map.! name) v == "int"
 isInteger st _ ct f@(LeafFn _ _) = getFnType st ct f == "int"
 isInteger _ _ _ LeafValInt {} = True
 isInteger _ _ _ NodeArmc {} = True
 isInteger _ _ _ _ = False
 
 -- Used in ParserState. Takes merged sym table. (check lvalue)
-getVarType :: GSymbolTable -> TypeTable -> SyntaxTree -> String
-getVarType st _ (LeafVar var Deref) = init $ getSymbolType (st Map.! var) -- Remove "*" from the end
-getVarType st tt (LeafVar var (Dot dotList)) = resolveDotType tt (getSymbolType (st Map.! var)) dotList
-getVarType st tt (LeafVar var (DotSelf attr dotList)) = resolveDotType tt (getSymbolType attr) dotList
-getVarType st _ (LeafVar var _) = getSymbolType (st Map.! var)
-getVarType _ _ _ = error "Not a variable"
+-- gSymT -> TypeTable -> classSymT -> varNode -> Type
+getVarType :: GSymbolTable -> TypeTable -> GSymbolTable -> SyntaxTree -> String
+getVarType st _ _ (LeafVar var Deref) = init $ getSymbolType (st Map.! var) -- Remove "*" from the end
+getVarType st tt cst (LeafVar "self" (Dot (attrAddr : dotList))) = resolveDotType tt (getSymbolType attrSym) dotList
+  where
+    filterFn s = isUnit s && (getSymbolAddress s == attrAddr)
+    attrSym = head (Map.elems (Map.filter filterFn cst))
+getVarType st tt _ (LeafVar var (Dot dotList)) = resolveDotType tt (getSymbolType (st Map.! var)) dotList
+getVarType st _ _ (LeafVar var _) = getSymbolType (st Map.! var)
+getVarType _ _ _ _ = error "Not a variable"
 
 -- Takes merged sym table
 getFnType :: GSymbolTable -> ClassTable -> SyntaxTree -> String
-getFnType st _ (LeafFn name _) = getSymbolType (st Map.! name)
-getFnType st ct (LeafMtd sym name _) = getSymbolType (snd (ct Map.! getSymbolType (st Map.! sym)) Map.! name) -- beautiful
+getFnType st _ (LeafFn label _) = getSymbolType (st Map.! label)
+getFnType st ct (LeafMtd sym label _) = getSymbolType fSym
+  where
+    cName = getSymbolType (st Map.! sym)
+    (_, cst) = ct Map.! cName
+    filterFn f = isFunc f && (getFuncLabel f == label)
+    fSym = head (Map.elems (Map.filter filterFn cst))
 getFnType st _ (NodeRead _) = "int"
 getFnType st _ (NodeWrite _) = "int"
 getFnType st _ NodeInitialize = "int"

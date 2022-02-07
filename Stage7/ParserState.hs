@@ -53,7 +53,7 @@ insertCTable :: [(String, SymbolBase)] -> [(String, SymbolBase)] -> State Parser
 insertCTable attrs mets = do
   s@ParserState {tTable = tt, cTable = ct, curClass = cNameMaybe} <- get
   let Just cName = cNameMaybe
-  let cSymTable = genClassSymbolTable (attrs ++ mets)
+  let cSymTable = genClassSymbolTable cName (attrs ++ mets)
   -- add current class to class table (temporarily) (for recursive decl)
   let ct2 = Map.insertWith (error "Non-unique class name") cName (0, Map.empty) ct
   let cSymTableV = verifyGSymTable cSymTable tt ct2
@@ -82,9 +82,9 @@ saveLTable :: [(String, [SymbolBase])] -> State ParserState LSymbolTable
 saveLTable decls = do
   s@ParserState {tTable = tt, gTable = gSymTable, curFn = cFn, curClass = cClass} <- get
   let (Func _ argsB _) = cFn
-      args = case cClass of
-        Nothing -> argsB
-        Just cName -> (cName, "self") : argsB
+      (ttCheck, args) = case cClass of
+        Nothing -> (tt, argsB)
+        Just cName -> (Map.insert cName [] tt, (cName, "self") : argsB)
       lSymTable = genLSymbolTable decls
       argSymTable = genArgSymbolTable args
       localSymbols = Map.unionWith (error "Args and local variables have same name") lSymTable argSymTable
@@ -92,7 +92,7 @@ saveLTable decls = do
       mergedSymTable = Map.union lSymG gSymTable
   put s {lTable = mergedSymTable}
   -- add the current class as a temp type (for the implicit self argument)
-  return $ verifyLSymTable localSymbols (Map.insert (fst $ head args) [] tt)
+  return $ verifyLSymTable localSymbols ttCheck
 
 -- | Saves current function as symbol
 saveCurFn :: String -> State ParserState String
@@ -145,18 +145,18 @@ tEq t1 t2 = case (t1, t2) of
     isUserType _ = True
 
 -- Typechecks and returns given fn defn with modified params
-fnCallTypeCheck :: String -> [(String, SyntaxTree)] -> State ParserState [SyntaxTree]
+fnCallTypeCheck :: String -> [(String, SyntaxTree)] -> State ParserState (String, [SyntaxTree])
 fnCallTypeCheck name params = do
   ParserState {gTable = gSymT} <- get
   case Map.lookup name gSymT of
-    Just (Func _ p2 _) ->
+    Just (Func _ p2 fLabel) ->
       if (length params == length p2) && and (zipWith (\(t1, _) (t2, _) -> tEq t1 t2) params p2)
-        then return (map snd params)
+        then return (fLabel, map snd params)
         else error $ "Function call doesnt match definition: " ++ name ++ show (map fst params)
     _ -> error $ "Function call is invalid: " ++ name
 
 -- Typechecks and returns given fn defn with modified params
-dotFnCallCheck :: String -> String -> [(String, SyntaxTree)] -> State ParserState [SyntaxTree]
+dotFnCallCheck :: String -> String -> [(String, SyntaxTree)] -> State ParserState (String, [SyntaxTree])
 dotFnCallCheck symName mName params = do
   ParserState {cTable = cTable, curClass = curClass, lTable = symTab} <- get
   let sym = case Map.lookup symName symTab of
@@ -165,9 +165,9 @@ dotFnCallCheck symName mName params = do
       sClass = getSymbolType sym
       (_, cSymT) = cTable Map.! sClass
   case Map.lookup mName cSymT of
-    Just (Func _ p2 _) ->
+    Just (Func _ p2 fLabel) ->
       if (length params == length p2) && and (zipWith (\(t1, _) (t2, _) -> tEq t1 t2) params p2)
-        then return (map snd params)
+        then return (fLabel, map snd params)
         else error $ "Method call doesnt match definition: " ++ sClass ++ "." ++ mName ++ show (map fst params)
     _ -> error $ "Method call is invalid: " ++ sClass ++ "." ++ mName
 
@@ -180,14 +180,14 @@ dotSymCheck symName dots = do
     Nothing -> error $ "Variable does not exist : " ++ symName
 
 -- Typechecks and returns modified index dotfields for self.Type...
-classDotSymCheck :: [String] -> State ParserState (Symbol, [Int])
+classDotSymCheck :: [String] -> State ParserState [Int]
 classDotSymCheck [] = error ""
 classDotSymCheck (attrName : dots) = do
   ParserState {tTable = tTable, curClass = cNameMaybe, cTable = cTable} <- get
   let Just cName = cNameMaybe
       (_, symTab) = cTable Map.! cName
   case Map.lookup attrName symTab of
-    Just s -> return (s, dotStrToIndex tTable (getSymbolType s) dots)
+    Just s -> return $ getSymbolAddress s : dotStrToIndex tTable (getSymbolType s) dots
     Nothing -> error $ "Cannot find attribute " ++ attrName ++ " of " ++ cName
 
 retTypeCheck :: String -> State ParserState ()
@@ -211,8 +211,11 @@ userTypeSize tName = do
 classTypeSize :: String -> State ParserState Int
 classTypeSize cName = do
   ParserState {cTable = ct} <- get
+  let (cSize, _) = case Map.lookup cName ct of
+        Just ce -> ce
+        Nothing -> error $ "Not a valid class type: " ++ cName
   case Map.lookup cName ct of
-    Just _ -> return $ fst (ct Map.! cName)
+    Just _ -> return cSize
     Nothing -> error $ "Cannot do new/delete on " ++ cName
 
 intCheck :: SyntaxTree -> State ParserState SyntaxTree
@@ -236,8 +239,11 @@ selfCheck = do
 
 varType :: SyntaxTree -> State ParserState String
 varType n = do
-  ParserState {tTable = tt, lTable = symTab} <- get
-  return $ getVarType symTab tt n
+  ParserState {tTable = tt, lTable = symTab, curClass = curClass, cTable = ct} <- get
+  let classSymT = case curClass of
+        Just cName -> snd $ ct Map.! cName
+        Nothing -> Map.empty
+  return $ getVarType symTab tt classSymT n
 
 fnType :: SyntaxTree -> State ParserState String
 fnType n = do

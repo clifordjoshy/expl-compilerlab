@@ -2,8 +2,10 @@
 
 module CodeGen where
 
+import Data.Bifunctor (Bifunctor (second))
 import Data.List
 import qualified Data.Map as Map
+import DefTables (ClassTable)
 import LabelLink (replaceLabels)
 import SymbolTable
 import SyntaxTree
@@ -77,10 +79,10 @@ genAddrResolveCode name (Index2D i j) regs gst lst =
   )
   where
     (symReg, regs2) = getReg regs
-    (iCode, iReg, regs3, _) = genCode Args {node = i, regsFree = regs2, gSymTable = gst, lSymTable = lst, labels = [], blockLabels = Nothing}
+    (iCode, iReg, regs3, _) = genCode Args {node = i, regsFree = regs2, gSymTable = gst, lSymTable = lst}
     symCode = symbolResolve name symReg gst lst
     (Arr2 _ m n _) = gst Map.! name
-    (jCode, jReg, _, _) = genCode Args {node = j, regsFree = regs3, gSymTable = gst, lSymTable = lst, labels = [], blockLabels = Nothing}
+    (jCode, jReg, _, _) = genCode Args {node = j, regsFree = regs3, gSymTable = gst, lSymTable = lst}
 
 -- | varName -> resolver -> freeRegs -> GSymbolTable -> LSymbolTable -> (code, reg, remainingRegs)
 -- | Returns code to resolve a variable value and stores the value in a register
@@ -119,14 +121,17 @@ genCode a@Args {node = (LeafVar var resolver)} = (code, r, rs, labels)
   where
     Args {regsFree = regsFree, labels = labels, gSymTable = gst, lSymTable = lst} = a
     (code, r, rs) = genValResolveCode var resolver regsFree gst lst
-genCode a@Args {node = (LeafFn name params)} = (genFnCallXsm usedRegs fnLabel argCodes returnReg, returnReg, rs, labels)
+genCode a@Args {node = (LeafFn fl params)} = (genFnCallXsm usedRegs fnLabel argCodes returnReg, returnReg, rs, labels)
   where
-    Args {regsFree = regsFree, labels = labels, gSymTable = gst} = a
+    Args {regsFree = regsFree, labels = labels} = a
     usedRegs = getRegsUsed regsFree
     getArgCode p = let (pCode, pReg, _, _) = genCode a {node = p} in pCode ++ genStackXsm PUSH pReg
     argCodes = map getArgCode params
-    fnLabel = let (Func _ _ fl) = gst Map.! name in accessLabel fl
+    fnLabel = accessLabel fl
     (returnReg, rs) = getReg regsFree
+genCode a@Args {node = (LeafMtd insName fl params)} = genCode a {node = LeafFn fl params2}
+  where
+    params2 = LeafVar insName Simple : params
 
 -- Operator Nodes
 genCode a@Args {node = (NodeRef (LeafVar var resolver))} = (argCode, r, rem, labels)
@@ -251,20 +256,20 @@ genCode a@Args {node = (NodeFree var)} = (varCode ++ genLibXsm usedRegs "Free" l
     (varCode, varReg, _, _) = genCode a {node = var, regsFree = regsRem}
     libArgs = (Reg varReg, None, None)
     (retReg, regsRem) = getReg regsFree
+genCode a@Args {node = (NodeRef _)} = error $ "Invalid Node : " ++ show (node a)
+genCode a@Args {node = (NodeAlloc _ _)} = error $ "Invalid Node : " ++ show (node a)
+genCode a@Args {node = (NodeAssign _ _)} = error $ "Invalid Node : " ++ show (node a)
 
--- genCode a@Args {node = (NodeRef _)} = error $ "Invalid Node : " ++ show (node a)
--- genCode a@Args {node = (NodeAlloc _)} = error $ "Invalid Node : " ++ show (node a)
--- genCode a@Args {node = (NodeAssign _ _)} = error $ "Invalid Node : " ++ show (node a)
-genCode a = error $ "Invalid Node : " ++ show (node a)
+-- genCode a = error $ "Invalid Node : " ++ show (node a)
 
 type FDef = (String, String, [String], LSymbolTable, SyntaxTree)
 
 -- Generates code for a function
 -- FDef -> GSymbolTable -> labels -> (remainingLabels, code)
-genFnCode :: FDef -> GSymbolTable -> [String] -> ([String], String)
-genFnCode (_, name, params, lSym, ast) gSym labels =
+genFnCode :: FDef -> GSymbolTable -> [String] -> String -> ([String], String)
+genFnCode (_, _, params, lSym, ast) gSym labels fnLabel =
   ( remainingLabels,
-    genLabelXsm label
+    genLabelXsm fnLabel
       ++ genStackXsm PUSH "BP"
       ++ genMovXsm "BP" "SP"
       ++ genArmcXsm '+' "BP" "1"
@@ -277,7 +282,6 @@ genFnCode (_, name, params, lSym, ast) gSym labels =
       ++ genRetXsm
   )
   where
-    (Func _ _ label) = gSym Map.! name
     lVarCount = Map.size lSym - length params
     lVarAllocCode = concat $ replicate lVarCount (genStackXsm PUSH "R0")
     (astCode, resultReg, _, remainingLabels) =
@@ -292,15 +296,31 @@ genFnCode (_, name, params, lSym, ast) gSym labels =
           }
     lVarRelCode = concat $ replicate lVarCount (genStackXsm POP "R0")
 
--- GSymbolTable -> sp -> fDecls -> mainBlock -> code
-codeGen :: GSymbolTable -> Int -> [FDef] -> (LSymbolTable, SyntaxTree) -> String
-codeGen gTable sp fDecls main = header ++ code
+getFnsCode :: [FDef] -> [(String, [FDef])] -> GSymbolTable -> ClassTable -> String
+getFnsCode fns mets gt ct = concat $ codeList ++ metList
+  where
+    initLabels = ["L" ++ show i | i <- [0, 1 ..]]
+
+    findFnLabel :: GSymbolTable -> FDef -> String
+    findFnLabel st (_, name, _, _, _) = getFuncLabel (st Map.! name)
+
+    mapFnGen :: (FDef -> String) -> ([String] -> FDef -> ([String], String))
+    mapFnGen lbliser = \lbls fdef -> genFnCode fdef gt lbls (lbliser fdef)
+
+    (labelsRem, codeList) = mapAccumL (mapFnGen (findFnLabel gt)) initLabels fns
+
+    genClassCode :: [String] -> (String, [FDef]) -> ([String], String)
+    genClassCode lbls (cName, mets) = second concat $ mapAccumL (mapFnGen (findFnLabel (snd (ct Map.! cName)))) lbls mets
+
+    (_, metList) = mapAccumL genClassCode labelsRem mets
+
+-- GSymbolTable -> sp -> classTable -> class fdecls -> fDecls -> mainBlock -> code
+codeGen :: GSymbolTable -> Int -> ClassTable -> [(String, [FDef])] -> [FDef] -> String
+codeGen gTable sp cTable cfDecls fDecls = header ++ code
   where
     header = unlines $ map show [0, 2056, 0, 0, 0, 0, 0, 0]
-    (labelsRem, codeList) = mapAccumL (\a b -> genFnCode b gTable a) ["L" ++ show i | i <- [0, 1 ..]] fDecls
-    (mainLSym, mainAst) = main
-    (_, mainCode) = genFnCode ("int", "main", [], mainLSym, mainAst) gTable labelsRem
     (initCode, _, _, _) = genCode Args {node = LeafFn "main" [], regsFree = allRegs, gSymTable = gTable}
-    labelledCode = genMovXsm "SP" (show sp) ++ initCode ++ "INT 10\n" ++ concat codeList ++ mainCode
+    fnCode = getFnsCode fDecls cfDecls gTable cTable
+    labelledCode = genMovXsm "SP" (show sp) ++ initCode ++ "INT 10\n" ++ fnCode
     -- code = labelledCode
     code = replaceLabels labelledCode

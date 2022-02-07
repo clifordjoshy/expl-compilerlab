@@ -18,9 +18,12 @@ main = do
   args <- getArgs
   inputFile <- openFile (head args) ReadMode
   fileContents <- hGetContents inputFile
-  let (cTable, cfDecls, gTable, sp, fDecl, main) = parseTokens (scanTokens fileContents)
-  print cTable
-  let (_, mainAst) = main in putStr $ prettyPrint mainAst
-  -- let code = codeGen gTable sp fDecl main
-  -- createOutputFile code
+  let (cTable, cfDecls, gTable, sp, fDecl) = parseTokens (scanTokens fileContents)
+  -- print cTable
+  -- print fDecl
+  -- print cfDecls
+
+  -- let (_, "main", _, _, mainAst) = last fDecl in putStr $ prettyPrint mainAst
+  let code = codeGen gTable sp cTable cfDecls fDecl
+  createOutputFile code
   hClose inputFile

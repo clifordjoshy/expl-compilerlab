@@ -6,7 +6,7 @@ import qualified Data.Map as Map
 
 %wrapper "monadUserState"
 
-@label = [A-Za-z][0-9A-Za-z]*
+@label = [a-zA-Z_][a-zA-Z_0-9\.]*
 
 tokens :-
   \".*\"            { onGlob }

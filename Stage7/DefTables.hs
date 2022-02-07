@@ -32,7 +32,11 @@ dotStrToIndex tTable startType fields = intFields
 
 -- | Returns the size of a given type string
 getTypeSize :: TypeTable -> String -> Int
-getTypeSize tTable tName = length $ tTable Map.! tName
+getTypeSize tTable tName = length tEntry
+  where
+    tEntry = case Map.lookup tName tTable of
+      Just e -> e
+      Nothing -> error $ "Not a valid user type: " ++ tName
 
 -- | Checks if a given array of types all fit into the type table and class table
 areValidTypes :: TypeTable -> ClassTable -> [String] -> Bool
@@ -75,4 +79,4 @@ verifyLSymTable lTable tTable =
     else error "This error shouldn't be thrown #3"
   where
     symbolTypes = map fst $ Map.elems lTable
-    isValid = areValidTypes tTable (Map.fromList [("xx", (0, Map.empty))]) symbolTypes
+    isValid = areValidTypes tTable Map.empty symbolTypes

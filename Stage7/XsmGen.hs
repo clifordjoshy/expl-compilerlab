@@ -85,7 +85,6 @@ genFnCallXsm usedRegs fnLabel argCodes returnReg =
   where
     pushRegCode = concatMap (genStackXsm PUSH) usedRegs
     pushArgCode = concat argCodes
-    -- popArgCode = concat $ replicate (length argCodes) $ genStackXsm POP (head rs)
     popArgCode = genArmcXsm '-' "SP" (show $length argCodes)
     popRegCode = concatMap (genStackXsm POP) (reverse usedRegs)
 
