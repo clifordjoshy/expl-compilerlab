@@ -1,4 +1,4 @@
-module TypeTable where
+module DefTables where
 
 import Data.List
 import qualified Data.Map as Map
@@ -7,6 +7,8 @@ import SymbolTable
 type Field = (String, String) -- TypeName, VarName
 
 type TypeTable = Map.Map String [Field] -- Name -> TypeInfo
+
+type ClassTable = Map.Map String (Int, GSymbolTable) -- Name -> Size, Symbols(Func and Unit only)
 
 -- | Check if a list of dot access is valid on a given type and returns final type
 -- | TypeTable -> startType -> [DotList] -> FinalType
@@ -32,15 +34,16 @@ dotStrToIndex tTable startType fields = intFields
 getTypeSize :: TypeTable -> String -> Int
 getTypeSize tTable tName = length $ tTable Map.! tName
 
--- | Checks if a given array of types all fit into the type table
-areValidTypes :: TypeTable -> [String] -> Bool
-areValidTypes tTable = all tCheck
+-- | Checks if a given array of types all fit into the type table and class table
+areValidTypes :: TypeTable -> ClassTable -> [String] -> Bool
+areValidTypes tTable cTable = all tCheck
   where
+    validTypes = Map.keys tTable ++ Map.keys cTable
     tCheck "int" = True
     tCheck "str" = True
-    tCheck t = case Map.lookup (if last t == '*' then init t else t) tTable of
-      Just _ -> True
-      Nothing -> error $ "Type '" ++ t ++ "' not recognized."
+    tCheck t =
+      elem (if last t == '*' then init t else t) validTypes
+        || error ("Type '" ++ t ++ "' not recognized." ++ show validTypes)
 
 -- | Generates and type-checks a type table with passed definitions
 genTypeTable :: [(String, [Field])] -> TypeTable
@@ -52,18 +55,18 @@ genTypeTable tList =
     tTable = Map.fromListWith nameError tList
     nameError = error "Non-unique type name"
     fieldsVerify :: [Field] -> Bool
-    fieldsVerify fields = areValidTypes tTable $ map fst fields
+    fieldsVerify fields = areValidTypes tTable Map.empty $ map fst fields
     isValid = all (fieldsVerify . snd) tList
 
 -- Verifies if the passed global symbol table has valid types
-verifyGSymTable :: GSymbolTable -> TypeTable -> GSymbolTable
-verifyGSymTable gTable tTable =
+verifyGSymTable :: GSymbolTable -> TypeTable -> ClassTable -> GSymbolTable
+verifyGSymTable gTable tTable cTable =
   if isValid
     then gTable
     else error "This error shouldn't be thrown #2"
   where
     symbolTypes = map getSymbolType $ Map.elems gTable
-    isValid = areValidTypes tTable symbolTypes
+    isValid = areValidTypes tTable cTable symbolTypes
 
 verifyLSymTable :: LSymbolTable -> TypeTable -> LSymbolTable
 verifyLSymTable lTable tTable =
@@ -72,4 +75,4 @@ verifyLSymTable lTable tTable =
     else error "This error shouldn't be thrown #3"
   where
     symbolTypes = map fst $ Map.elems lTable
-    isValid = areValidTypes tTable symbolTypes
+    isValid = areValidTypes tTable (Map.fromList [("xx", (0, Map.empty))]) symbolTypes

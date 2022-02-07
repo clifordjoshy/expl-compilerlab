@@ -77,22 +77,31 @@ symbolTableHelper decls sa toTableEntry eMsg = (Map.fromListWith (error eMsg) sy
 
     (size, symList) = let (s, l) = mapAccumL getLineSyms sa decls in (s, concat l)
 
--- | Array of decls ("type": [SymbolBase]) -> (GSymbolTable, size)
-genGSymbolTable :: [(String, [SymbolBase])] -> (GSymbolTable, Int)
-genGSymbolTable decls = symbolTableHelper decls 4096 toTableEntry eMsg
+toGEntry :: String -> SymbolBase -> Int -> (String, Symbol)
+toGEntry t v a = case v of
+  U name -> (name, Unit t a)
+  A name s -> (name, Arr t s a)
+  A2 name s1 s2 -> (name, Arr2 t s1 s2 a)
+  P name -> (name, Unit (t ++ "*") a)
+  F name params -> (name, Func t (map paramToTuple params) name)
+  PF name params -> (name, Func (t ++ "*") (map paramToTuple params) name)
   where
     paramToTuple (t, v) = case v of
       U n -> (t, n)
       P n -> (t ++ "*", n)
       _ -> error "Not a valid param"
-    toTableEntry t v a = case v of
-      U name -> (name, Unit t a)
-      A name s -> (name, Arr t s a)
-      A2 name s1 s2 -> (name, Arr2 t s1 s2 a)
-      P name -> (name, Unit (t ++ "*") a)
-      F name params -> (name, Func t (map paramToTuple params) name)
-      PF name params -> (name, Func (t ++ "*") (map paramToTuple params) name)
+
+-- | Array of decls ("type": [SymbolBase]) -> (GSymbolTable, size)
+genGSymbolTable :: [(String, [SymbolBase])] -> (GSymbolTable, Int)
+genGSymbolTable decls = symbolTableHelper decls 4096 toGEntry eMsg
+  where
     eMsg = "Non-unique global declaration"
+
+genClassSymbolTable :: [(String, SymbolBase)] -> GSymbolTable
+genClassSymbolTable mems = fst $ symbolTableHelper memsMapped 0 toGEntry eMsg
+  where
+    memsMapped = map (\(a, b) -> (a, [b])) mems
+    eMsg = "Non-unique members in class"
 
 -- | Array of decls ("type": [unit/ptr])  -> LSymbolTable
 genLSymbolTable :: [(String, [SymbolBase])] -> LSymbolTable

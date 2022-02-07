@@ -77,8 +77,8 @@ import SyntaxTree
 
 %%
 
-Program : TypeDefBlock ClassDefBlock GDeclBlock FDefBlock MainBlock      { ($3, $4, $5) }
-        | TypeDefBlock ClassDefBlock GDeclBlock MainBlock                { ($3, [], $4) }
+Program : TypeDefBlock ClassDefBlock GDeclBlock FDefBlock MainBlock      { ($2, $3, $4, $5) }
+        | TypeDefBlock ClassDefBlock GDeclBlock MainBlock                { ($2, $3, [], $4) }
 
 {- TYPE DEFINITIONS GRAMMAR -}
 TypeDefBlock : TYPE TypeDefList ENDTYPE    {% saveTypeTable $2 }
@@ -100,30 +100,27 @@ Type : INT                                 { "int" }
      | id                                  { $1 }
 
 {- CLASS DEFINITIONS GRAMMAR -}
-ClassDefBlock : CLASS ClassDefList ENDCLASS       {% saveClassTable $2 }
-              | CLASS ENDCLASS                    {% saveClassTable [] }
-              | {- empty -}                       {% saveClassTable [] }
+ClassDefBlock : CLASS ClassDefList ENDCLASS               { $2 }
+              | CLASS ENDCLASS                            { [] }
+              | {- empty -}                               { [] }
 
-ClassDefList : ClassDefList ClassDef              { $1 + [$2] }
-             | ClassDef                           { [$1] }
+ClassDefList : ClassDefList ClassDef                      { $1 ++ [$2] }
+             | ClassDef                                   { [$1] }
 
-ClassDef : Cname '{' DECL FieldDeclList MethodDecl ENDDECL MethodDefns '}'
-                                                  {  }
+ClassDef : CName '{' ClassDecl MethodDefns '}'            {% endCurClass >> return ($1, $4) }
 
-Cname : id                                        { $1 }
-{-      id EXTENDS id                               -}
+CName : id                                                {% saveCurClass $1 }
 
-MethodDecl : MethodDecl MDecl                     { $1 ++ [$2] }
-           | MDecl                                { [$1] }
+ClassDecl : DECL FieldDeclList MethodDecl ENDDECL         {% insertCTable $2 $3 }
 
-MDecl : Type id '(' ParamList ')'                 { ($1, [F $2 $4]) }
-      | Type '*' id '(' ParamList ')'             { ($1, [PF $3 $5]) }
+MethodDecl : MethodDecl MDecl                             { $1 ++ [$2] }
+           | MDecl                                        { [$1] }
 
-MethodDefns : MethodDefns MDef                    { $1 ++ [$2] }
-            | MDef                                { [$1] }
+MDecl : Type id '(' ParamList ')' ';'                     { ($1, F $2 $4) }
+      | Type '*' id '(' ParamList ')' ';'                 { ($1, PF $3 $5) }
 
-MDef : FDef                                       {% methodTypeCheck $1 } 
-
+MethodDefns : MethodDefns FDef                            { $1 ++ [$2] }
+            | FDef                                        { [$1] }
 
 {- GLOBAL DECLARATIONS GRAMMAR -}
 
@@ -156,12 +153,10 @@ Param : Type BaseVar                    { ($1, $2) }
 
 {- FUNCTION DEFINITION GRAMMAR -}
 
-FDefBlock : FDefBlock FDefG                                          { $1 ++ [$2] }
-          | FDefG                                                    { [$1] }
+FDefBlock : FDefBlock FDef                                           { $1 ++ [$2] }
+          | FDef                                                     { [$1] }
 
-FDefG : FDef                                                         {% fnTypeCheck $1 }
-
-FDef : FType FName '(' ParamList ')' '{' LDeclBlock Routine '}'      { ($1, $2, $4, $7, $8) } 
+FDef : FType FName '(' ParamList ')' '{' LDeclBlock Routine '}'      {% fnTypeCheck ($1, $2, $4, $7, $8) } 
 FType: Type                                                          { $1 }
      | Type '*'                                                      { $1 ++ "*" }
 FName: id                                                            {% saveCurFn $1 }
@@ -194,15 +189,16 @@ RVal : Variable                         {% varType $1 >>= \t -> return (t, $1) }
 Slist : Slist Stmt                      { NodeConn $1 $2 }
       | Stmt                            { $1 }
 
-Stmt : Variable '=' RVal ';'                               {% let (t, v) = $3 in (assignTypeCheck $1 t >> return (NodeAssign $1 v)) } 
-     | IF '(' B ')' THEN Slist ENDIF ';'                   { NodeIf $3 $6 }
-     | IF '(' B ')' THEN Slist ELSE Slist ENDIF ';'        { NodeIfElse $3 $6 $8 }
-     | WHILE '(' B ')' DO Slist ENDWHILE ';'               { NodeWhile $3 $6 }
-     | BREAK ';'                                           { NodeBreak }
-     | CONTINUE ';'                                        { NodeCont }
-     | FnCall ';'                                          { $1 }
-     | Variable '=' ALLOC '(' ')' ';'                      {% varType $1 >>= \t -> (userTypeCheck t >> typeSize t) >>= \s -> return (NodeAlloc $1 s) } 
-     | Variable '=' NEW '(' ')' ';'                        {  } 
+Stmt : Variable '=' RVal ';'                         {% let (t, v) = $3 in (assignTypeCheck $1 t >> return (NodeAssign $1 v)) } 
+     | IF '(' B ')' THEN Slist ENDIF ';'             { NodeIf $3 $6 }
+     | IF '(' B ')' THEN Slist ELSE Slist ENDIF ';'  { NodeIfElse $3 $6 $8 }
+     | WHILE '(' B ')' DO Slist ENDWHILE ';'         { NodeWhile $3 $6 }
+     | BREAK ';'                                     { NodeBreak }
+     | CONTINUE ';'                                  { NodeCont }
+     | FnCall ';'                                    { $1 }
+     | Variable '=' ALLOC '(' ')' ';'                {% varType $1 >>= userTypeSize >>= \s -> return (NodeAlloc $1 s) } 
+     | Variable '=' NEW '(' ')' ';'                  {% varType $1 >>= classTypeSize >>= \s -> return (NodeAlloc $1 s) } 
+     | Variable '=' NEW '(' id ')' ';'               {% varType $1 >>= classTypeSize >>= \s -> return (NodeAlloc $1 s) } 
 
 E2 : E '+' E                            { NodeArmc '+' $1 $3 }
    | E '-' E                            { NodeArmc '-' $1 $3 }
@@ -216,13 +212,14 @@ E : E2                                  { $1 }
   | FnCall                              {% intCheck $1 }
   | Variable                            {% intCheck $1 }
 
-FnCall: id '(' ArgList ')'              {% fnCallTypeCheck $1 $3 >>= \p -> return (LeafFn $1 p)}
+FnCall: id '(' ArgList ')'              {% fnCallTypeCheck $1 $3 >>= \p -> return (LeafFn $1 p) }
       | READ '(' Variable ')'           { NodeRead $3 }
       | WRITE '(' RVal ')'              { let (t, v) = $3 in NodeWrite v } 
-      | FREE '(' RVal ')'               {% let (t, v) = $3 in (userTypeCheck t >> return (NodeFree v)) } 
-      | DELETE '(' RVal ')'             {  } 
+      | FREE '(' RVal ')'               {% let (t, v) = $3 in (userTypeSize t >> return (NodeFree v)) } 
+      | DELETE '(' RVal ')'             {% let (t, v) = $3 in (classTypeSize t >> return (NodeFree v)) } 
       | INITIALIZE '(' ')'              { NodeInitialize }
-      | DotField '.' '(' ArgList ')'    {  }
+      | id '.' id '('ArgList')'         {% dotFnCallCheck $1 $3 $5 >>= \p -> return (LeafMtd $1 $3 p) }
+      | SELF '.' id '('ArgList')'       {% selfCheck >> dotFnCallCheck "self" $3 $5 >>= \p -> return (LeafMtd "self" $3 p) }
 
 ArgList : ArgList ',' RVal              { $1 ++ [$3] }
         | RVal                          { [$1] }
@@ -239,11 +236,11 @@ Variable : id                           {% symCheck (isUnit) $1 >> return (LeafV
          | id '[' E ']'                 {% symCheck (isArr) $1 >> return (LeafVar $1 (Index $3)) }
          | id '['E']' '['E']'           {% symCheck (isArr2) $1 >> return (LeafVar $1 (Index2D $3 $6)) }
          | '*' id                       {% symCheck (isPtr) $2 >> return (LeafVar $2 Deref) }
-         | DotField                     {% (let n:ds = $1 in dotSymCheck n ds >>= \di -> return (LeafVar n (Dot di))) }
+         | id DotField                  {% dotSymCheck $1 $2 >>= \di -> return (LeafVar $1 (Dot di)) }
+         | SELF DotField                {% selfCheck >> classDotSymCheck $2 >>= \(s,di) -> return (LeafVar "self" (DotSelf s di))}
 
 DotField : DotField '.' id              { $1 ++ [$3] }
-         | id '.' id                    { [$1, $3] }
-         | SELF '.' DotField            {  } {- only valid within methods -}
+         | '.' id                       { [$2] }
 
 String : str                            { LeafValStr $1 }
 
@@ -257,15 +254,17 @@ Main: MAIN                                                   {% saveMainFn }
 
 parseError t = error $ "Parse error: " ++ show t
 
-parseTokens tokenStream = (gSymFull, sp, fDecl, main)
+parseTokens tokenStream = (cTable, cfDecls, gSymFull, sp, fDecl, main)
   where
-    ((sp, fDecl, main), (tTable, gSymTable, _, _)) = runState (parse tokenStream) startState
-    gSymFull = Map.insertWith (error "Redeclaration of main function") "main" (Func "int" [] "main") gSymTable
+    ((cfDecls, sp, fDecl, main), ParserState {gTable = gTable, cTable = cTable}) = runState (parse tokenStream) startState
+    gSymFull = Map.insertWith (error "Redeclaration of main function") "main" (Func "int" [] "main") gTable
 
 type Program =
-  ( Int,
-    [FDef],
-    (LSymbolTable, SyntaxTree)
+  ( 
+    [(String, [FDef])],         -- class def block
+    Int,                        -- sp
+    [FDef],                     -- fn defns
+    (LSymbolTable, SyntaxTree)  -- main fn
   )
 
 }
