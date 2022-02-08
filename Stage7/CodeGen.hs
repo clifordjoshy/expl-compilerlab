@@ -129,9 +129,11 @@ genCode a@Args {node = (LeafFn fl params)} = (genFnCallXsm usedRegs fnLabel argC
     argCodes = map getArgCode params
     fnLabel = accessLabel fl
     (returnReg, rs) = getReg regsFree
-genCode a@Args {node = (LeafMtd insName fl params)} = genCode a {node = LeafFn fl params2}
+genCode a@Args {node = (LeafMtd (insName, subSym) fl params)} = genCode a {node = LeafFn fl (selfArg : params)}
   where
-    params2 = LeafVar insName Simple : params
+    selfArg = case subSym of
+      Nothing -> LeafVar insName Simple
+      Just s -> LeafVar insName (Dot [getSymbolAddress s])
 
 -- Operator Nodes
 genCode a@Args {node = (NodeRef (LeafVar var resolver))} = (argCode, r, rem, labels)

@@ -156,39 +156,50 @@ fnCallTypeCheck name params = do
     _ -> error $ "Function call is invalid: " ++ name
 
 -- Typechecks and returns given fn defn with modified params
-dotFnCallCheck :: String -> String -> [(String, SyntaxTree)] -> State ParserState (String, [SyntaxTree])
-dotFnCallCheck symName mName params = do
+dotFnCallCheck :: String -> [String] -> [(String, SyntaxTree)] -> State ParserState (String, [SyntaxTree], Maybe Symbol)
+dotFnCallCheck insName dots params = do
   ParserState {cTable = cTable, curClass = curClass, lTable = symTab} <- get
-  let sym = case Map.lookup symName symTab of
+  let sym = case Map.lookup insName symTab of
         Just s -> s
-        Nothing -> error $ "Cannot find method " ++ mName ++ " of " ++ symName
+        Nothing -> error $ "Cannot find instance " ++ insName
       sClass = getSymbolType sym
-      (_, cSymT) = cTable Map.! sClass
-  case Map.lookup mName cSymT of
+      cst1 = case Map.lookup sClass cTable of
+        Just (_, cst) -> cst
+        Nothing -> error $ sClass ++ " is not a class."
+
+      (cst2, subSym) = case length dots of
+        1 -> (cst1, Nothing)
+        2 ->
+          if insName == "self"
+            then case Map.lookup (head dots) cst1 of
+              Just s -> (snd $ cTable Map.! getSymbolType s, Just s)
+              Nothing -> error $ sClass ++ " does not contain child " ++ head dots
+            else error "Cannot access child from outside class scope."
+        _ -> error "Cannot access child from outside class scope."
+
+      mName = last dots
+
+  case Map.lookup mName cst2 of
     Just (Func _ p2 fLabel) ->
       if (length params == length p2) && and (zipWith (\(t1, _) (t2, _) -> tEq t1 t2) params p2)
-        then return (fLabel, map snd params)
+        then return (fLabel, map snd params, subSym)
         else error $ "Method call doesnt match definition: " ++ sClass ++ "." ++ mName ++ show (map fst params)
     _ -> error $ "Method call is invalid: " ++ sClass ++ "." ++ mName
 
 -- Typechecks and returns modified index dotfields
-dotSymCheck :: String -> [String] -> State ParserState [Int]
-dotSymCheck symName dots = do
-  ParserState {tTable = tTable, lTable = symTab} <- get
-  case Map.lookup symName symTab of
-    Just s -> return $ dotStrToIndex tTable (getSymbolType s) dots
-    Nothing -> error $ "Variable does not exist : " ++ symName
-
--- Typechecks and returns modified index dotfields for self.Type...
-classDotSymCheck :: [String] -> State ParserState [Int]
-classDotSymCheck [] = error ""
-classDotSymCheck (attrName : dots) = do
+dotAccCheck :: String -> [String] -> State ParserState [Int]
+dotAccCheck "self" (attrName : dots) = do
   ParserState {tTable = tTable, curClass = cNameMaybe, cTable = cTable} <- get
   let Just cName = cNameMaybe
       (_, symTab) = cTable Map.! cName
   case Map.lookup attrName symTab of
     Just s -> return $ getSymbolAddress s : dotStrToIndex tTable (getSymbolType s) dots
     Nothing -> error $ "Cannot find attribute " ++ attrName ++ " of " ++ cName
+dotAccCheck symName dots = do
+  ParserState {tTable = tTable, lTable = symTab} <- get
+  case Map.lookup symName symTab of
+    Just s -> return $ dotStrToIndex tTable (getSymbolType s) dots
+    Nothing -> error $ "Variable does not exist : " ++ symName
 
 retTypeCheck :: String -> State ParserState ()
 retTypeCheck t = do
@@ -224,8 +235,9 @@ intCheck n = do
   let classSymT = case curClass of
         Just cName -> snd $ ct Map.! cName
         Nothing -> Map.empty
-      (LeafVar varName _) = n
-      symTab = if varName == "self" then classSymT else lSymT
+      symTab = case n of
+        LeafVar "self" _ -> classSymT
+        _ -> lSymT
   if isInteger symTab tt ct n then return n else error $ "Integer value was expected: " ++ show n
 
 symCheck :: (Symbol -> Bool) -> String -> State ParserState ()

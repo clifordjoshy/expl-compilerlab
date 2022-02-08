@@ -16,7 +16,7 @@ data VarResolve
 data SyntaxTree
   = LeafVar String VarResolve -- VarName, Resolver
   | LeafFn String [SyntaxTree] -- FnLabel, Params
-  | LeafMtd String String [SyntaxTree] -- InstanceName, FnLabel, Params
+  | LeafMtd (String, Maybe Symbol) String [SyntaxTree] -- (InstanceName, Offset), FnLabel, Params
   | LeafValInt Int
   | LeafValStr String
   | LeafNull
@@ -38,10 +38,11 @@ data SyntaxTree
   | NodeReturn SyntaxTree
   deriving (Show)
 
--- | Returns if a given constructor evaluates to an integer value
+-- | Returns if a given constructor evaluates to an integer value in the context of passed symboltable
 isInteger :: GSymbolTable -> TypeTable -> ClassTable -> SyntaxTree -> Bool
 isInteger st tt ct v@(LeafVar name _) = getVarType st tt v == "int"
-isInteger st _ ct f@(LeafFn _ _) = getFnType st ct f == "int"
+isInteger st _ ct f@LeafFn {} = getFnType st ct f == "int"
+isInteger st _ ct f@LeafMtd {} = getFnType st ct f == "int"
 isInteger _ _ _ LeafValInt {} = True
 isInteger _ _ _ NodeArmc {} = True
 isInteger _ _ _ _ = False
@@ -61,10 +62,15 @@ getVarType _ _ _ = error "Not a variable"
 -- Takes merged sym table
 getFnType :: GSymbolTable -> ClassTable -> SyntaxTree -> String
 getFnType st _ (LeafFn label _) = getSymbolType (st Map.! label)
-getFnType st ct (LeafMtd sym label _) = getSymbolType fSym
+getFnType st ct (LeafMtd (ins, Nothing) label _) = getSymbolType fSym
   where
-    cName = getSymbolType (st Map.! sym)
+    cName = getSymbolType (st Map.! ins)
     (_, cst) = ct Map.! cName
+    filterFn f = isFunc f && (getFuncLabel f == label)
+    fSym = head (Map.elems (Map.filter filterFn cst))
+getFnType _ ct (LeafMtd (sym, Just s) label _) = getSymbolType fSym
+  where
+    (_, cst) = ct Map.! getSymbolType s
     filterFn f = isFunc f && (getFuncLabel f == label)
     fSym = head (Map.elems (Map.filter filterFn cst))
 getFnType st _ (NodeRead _) = "int"

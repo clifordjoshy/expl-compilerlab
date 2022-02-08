@@ -73,7 +73,6 @@ import SyntaxTree
 %nonassoc '==' '!=' '>' '<' '>=' '<='
 %left '+' '-'
 %left '*' '/' '%'
-%left '.'
 
 %%
 
@@ -218,8 +217,11 @@ FnCall: id '(' ArgList ')'              {% fnCallTypeCheck $1 $3 >>= \(fl, p) ->
       | FREE '(' RVal ')'               {% let (t, v) = $3 in (userTypeSize t >> return (NodeFree v)) } 
       | DELETE '(' RVal ')'             {% let (t, v) = $3 in (classTypeSize t >> return (NodeFree v)) } 
       | INITIALIZE '(' ')'              { NodeInitialize }
-      | id '.' id '('ArgList')'         {% dotFnCallCheck $1 $3 $5 >>= \(fl, p) -> return (LeafMtd $1 fl p) }
-      | SELF '.' id '('ArgList')'       {% selfCheck >> dotFnCallCheck "self" $3 $5 >>= \(fl, p) -> return (LeafMtd "self" fl p) }
+      | Inst DotField '('ArgList')'     {% dotFnCallCheck $1 $2 $4 >>= \(fl, p, s) -> return (LeafMtd ($1, s) fl p) }
+
+Self : SELF                             {% selfCheck >> return "self"}
+Inst : Self                             { $1 }
+     | id                               { $1 }
 
 ArgList : ArgList ',' RVal              { $1 ++ [$3] }
         | RVal                          { [$1] }
@@ -236,8 +238,7 @@ Variable : id                           {% symCheck (isUnit) $1 >> return (LeafV
          | id '[' E ']'                 {% symCheck (isArr) $1 >> return (LeafVar $1 (Index $3)) }
          | id '['E']' '['E']'           {% symCheck (isArr2) $1 >> return (LeafVar $1 (Index2D $3 $6)) }
          | '*' id                       {% symCheck (isPtr) $2 >> return (LeafVar $2 Deref) }
-         | id DotField                  {% dotSymCheck $1 $2 >>= \di -> return (LeafVar $1 (Dot di)) }
-         | SELF DotField                {% selfCheck >> classDotSymCheck $2 >>= \di -> return (LeafVar "self" (Dot di))}
+         | Inst DotField                {% dotAccCheck $1 $2 >>= \di -> return (LeafVar $1 (Dot di)) }
 
 DotField : DotField '.' id              { $1 ++ [$3] }
          | '.' id                       { [$2] }
