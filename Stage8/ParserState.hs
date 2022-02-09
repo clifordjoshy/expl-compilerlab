@@ -4,6 +4,7 @@ module ParserState where
 
 import Control.Monad.State (MonadState (get, put), State)
 import Data.Bifunctor (second)
+import Data.List (isPrefixOf)
 import qualified Data.Map as Map
 import DefTables
 import SymbolTable
@@ -66,9 +67,11 @@ insertCTable attrs mets = do
 
       -- add current class to class table (temporarily) (for recursive decl)
       ct2 = Map.insertWith (error "Non-unique class name") cName Class {} ct
-      cSymTableV = verifyGSymTable cSymTable tt ct2
+      cSymTableV
+        | cSize <= 8 && Map.size cSymTable <= 16 = verifyGSymTable cSymTable tt ct2
+        | otherwise = error $ "Class " ++ cName ++ " exceeds 8 attributes + 8 methods"
 
-  put s {cTable = Map.insert cName Class {size = cSize, st = cSymTable, parent = parent} ct}
+  put s {cTable = Map.insert cName Class {size = cSize, st = cSymTableV, parent = parent} ct}
   return ()
 
 -- | Pushes current class to the class table
@@ -108,14 +111,26 @@ saveLTable decls = do
 saveCurFn :: String -> State ParserState String
 saveCurFn name = do
   s@ParserState {cTable = ct, gTable = gSymTable, curClass = curClass} <- get
+
   let symTab = case curClass of
         Nothing -> gSymTable
         Just (cName, _) -> st $ ct Map.! cName
-  let curFn = case Map.lookup name symTab of
+      curFn = case Map.lookup name symTab of
         Just f -> f
         Nothing -> error $ "Function " ++ name ++ " not declared."
 
-  put s {curFn = curFn}
+  -- if function is being redefined without redeclaration, update label in class
+  case curClass of
+    Nothing -> put s {curFn = curFn}
+    Just (cName, _) -> do
+      let funcLabel = getFuncLabel curFn
+          newSym = setFuncLabel curFn (cName ++ "." ++ name)
+          newCst = Map.insert name newSym symTab
+          newCTable = Map.update (\c -> Just c {st = newCst}) cName ct
+      if name `isPrefixOf` funcLabel
+        then put s {curFn = curFn}
+        else put s {curFn = newSym, cTable = newCTable}
+
   return name
 
 saveMainFn :: State ParserState String
@@ -232,12 +247,18 @@ userTypeSize tName = do
 classTypeSize :: String -> State ParserState Int
 classTypeSize cName = do
   ParserState {cTable = ct} <- get
-  let cSize = case Map.lookup cName ct of
-        Just ce -> size ce
-        Nothing -> error $ "Not a valid class type: " ++ cName
   case Map.lookup cName ct of
-    Just _ -> return cSize
+    Just c -> return $ size c
     Nothing -> error $ "Cannot do new/delete on " ++ cName
+
+classNewCheck :: String -> String -> State ParserState Int
+classNewCheck argType varType = do
+  argSize <- classTypeSize argType
+  ParserState {cTable = cTable} <- get
+  varSize <- classTypeSize varType
+  if varSize >= 0 && isAncestor cTable varType argType
+    then return argSize
+    else error $ "Class " ++ argType ++ " is not an ancestor of " ++ varType
 
 intCheck :: SyntaxTree -> State ParserState SyntaxTree
 intCheck n = do

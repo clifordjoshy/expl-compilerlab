@@ -5,7 +5,7 @@ module Tokens where
 %wrapper "basic"
 
 @integer = [0-9]+
-@varName = [a-zA-Z_][a-zA-Z_0-9]*
+@id = [a-zA-Z_][a-zA-Z_0-9]*
 @string = \"(\\.|[^\"\\])*\"
 
 tokens :-
@@ -59,7 +59,7 @@ tokens :-
   self            { \_ -> TokenSelf }
   null            { \_ -> TokenNull }
   initialize      { \_ -> TokenInitialize }
-  @varName        { \s -> TokenVar s }
+  @id             { \s -> TokenId s }
   \[              { \_ -> TokenLBox }
   \]              { \_ -> TokenRBox }
   \{              { \_ -> TokenLCurly }
@@ -72,7 +72,7 @@ tokens :-
 
 data Token = TokenIntVal Int
            | TokenStrVal String
-           | TokenVar String
+           | TokenId String
            | TokenPlus
            | TokenMinus
            | TokenTimes

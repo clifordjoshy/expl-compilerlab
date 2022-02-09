@@ -24,6 +24,7 @@ data SyntaxTree
   | NodeWrite SyntaxTree
   | NodeInitialize
   | NodeAlloc SyntaxTree Int -- AllocVar, AllocSize
+  | NodeNew SyntaxTree Int
   | NodeFree SyntaxTree
   | NodeArmc Char SyntaxTree SyntaxTree
   | NodeBool String SyntaxTree SyntaxTree
@@ -92,6 +93,7 @@ toDataTree t = case t of
   NodeRead t -> Node "Read" [toDataTree t]
   NodeWrite t -> Node "Write" [toDataTree t]
   NodeAlloc t s -> Node ("Alloc " ++ show s) [toDataTree t]
+  NodeNew t s -> Node ("Free " ++ show s) [toDataTree t]
   NodeFree t -> Node "Free" [toDataTree t]
   _ -> Node (show t) []
 

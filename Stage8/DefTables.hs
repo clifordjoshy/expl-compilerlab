@@ -8,7 +8,12 @@ type Field = (String, String) -- TypeName, VarName
 
 type TypeTable = Map.Map String [Field] -- Name -> TypeInfo
 
-data CTableEntry = Class {size :: Int, st :: GSymbolTable, parent :: Maybe String} -- Symbols = Func and Unit only
+data CTableEntry = Class
+  { size :: Int,
+    st :: GSymbolTable, -- Symbols = Func and Unit only
+    parent :: Maybe String
+  }
+  deriving (Show)
 
 type ClassTable = Map.Map String CTableEntry
 
@@ -56,12 +61,12 @@ genTypeTable :: [(String, [Field])] -> TypeTable
 genTypeTable tList =
   if isValid
     then tTable
-    else error "This error shouldn't be thrown #1"
+    else error "Types cannot contain more than 8 attributes."
   where
     tTable = Map.fromListWith nameError tList
     nameError = error "Non-unique type name"
     fieldsVerify :: [Field] -> Bool
-    fieldsVerify fields = areValidTypes tTable Map.empty $ map fst fields
+    fieldsVerify fields = length fields <= 8 && areValidTypes tTable Map.empty (map fst fields)
     isValid = all (fieldsVerify . snd) tList
 
 -- Verifies if the passed global symbol table has valid types
@@ -82,3 +87,11 @@ verifyLSymTable lTable tTable =
   where
     symbolTypes = map fst $ Map.elems lTable
     isValid = areValidTypes tTable Map.empty symbolTypes
+
+-- checks if the first class is an ancestor of the second class
+isAncestor :: ClassTable -> String -> String -> Bool
+isAncestor ct a b
+  | a == b = True
+  | otherwise = case parent (ct Map.! b) of
+    Just p -> isAncestor ct a p
+    Nothing -> False

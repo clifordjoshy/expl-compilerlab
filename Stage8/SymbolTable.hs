@@ -63,6 +63,10 @@ getFuncLabel :: Symbol -> String
 getFuncLabel (Func _ _ label) = label
 getFuncLabel _ = error "Can't get label for non-function"
 
+setFuncLabel :: Symbol -> String -> Symbol
+setFuncLabel (Func n p l) l2 = Func n p l2
+setFuncLabel s _ = s
+
 findSymbolType :: String -> LSymbolTable -> GSymbolTable -> String
 findSymbolType name lst gst = case Map.lookup name lst of
   Just (t, _) -> t
@@ -108,17 +112,23 @@ genGSymbolTable decls = symbolTableHelper decls 4096 toGEntry eMsg
 -- Generates symbol table for a class
 -- ClassName -> [Args+Members] -> ParentSize -> ParentSymbols -> SymTable
 genClassSymbolTable :: String -> [(String, SymbolBase)] -> Int -> GSymbolTable -> (GSymbolTable, Int)
-genClassSymbolTable cName mems pSize pSym = (Map.unionWith redecError cstCur pSym, sizeInit + pSize)
+genClassSymbolTable cName mems pSize pSym = (Map.unionWith redecCheck cstCur pSym, size)
   where
     memsMapped = map (\(a, b) -> (a, [b])) mems
     eMsg = "Non-unique members in class"
-    redecError = error $ "Child " ++ cName ++ " members from parent."
-    (cstInit, sizeInit) = symbolTableHelper memsMapped pSize toGEntry eMsg
+    (cstInit, size) = symbolTableHelper memsMapped pSize toGEntry eMsg
     -- label should be of the form ClassName.MethodName
     labelTransform sym = case sym of
-      (Func t p l) -> Func t p (cName ++ "." ++ l)
+      f@(Func _ _ l) -> setFuncLabel f (cName ++ "." ++ l)
       s -> s
     cstCur = Map.map labelTransform cstInit
+    redecCheck :: Symbol -> Symbol -> Symbol
+    redecCheck c p
+      | isFunc c && isFunc p && tc == tp && pc == pp = c
+      | otherwise = error $ "Child " ++ cName ++ " redeclares members from parent."
+      where
+        (Func tc pc _) = c
+        (Func tp pp _) = p
 
 -- | Array of decls ("type": [unit/ptr])  -> LSymbolTable
 genLSymbolTable :: [(String, [SymbolBase])] -> LSymbolTable

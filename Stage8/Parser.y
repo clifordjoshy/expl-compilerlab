@@ -16,7 +16,7 @@ import SyntaxTree
 %token
     int            { TokenIntVal $$ }
     str            { TokenStrVal $$ }
-    id             { TokenVar $$ }
+    id             { TokenId $$ }
     '+'            { TokenPlus }
     '-'            { TokenMinus }
     '*'            { TokenTimes }
@@ -113,6 +113,7 @@ CName : id                                                {% saveCurClass $1 Not
       | id EXTENDS id                                     {% saveCurClass $1 (Just $3) }
 
 ClassDecl : DECL FieldDeclList MethodDecl ENDDECL         {% insertCTable $2 $3 }
+          | DECL MethodDecl ENDDECL                       {% insertCTable [] $2 }
 
 MethodDecl : MethodDecl MDecl                             { $1 ++ [$2] }
            | MDecl                                        { [$1] }
@@ -197,9 +198,8 @@ Stmt : Variable '=' RVal ';'                         {% let (t, v) = $3 in (assi
      | BREAK ';'                                     { NodeBreak }
      | CONTINUE ';'                                  { NodeCont }
      | FnCall ';'                                    { $1 }
-     | Variable '=' ALLOC '(' ')' ';'                {% varType $1 >>= userTypeSize >>= \s -> return (NodeAlloc $1 s) } 
-     | Variable '=' NEW '(' ')' ';'                  {% varType $1 >>= classTypeSize >>= \s -> return (NodeAlloc $1 s) } 
-     | Variable '=' NEW '(' id ')' ';'               {% varType $1 >>= classTypeSize >>= \s -> return (NodeAlloc $1 s) } 
+     | Variable '=' ALLOC '(' ')' ';'                {% varType $1 >>= userTypeSize >>= \s -> return (NodeAlloc $1 s) }
+     | Variable '=' NEW '(' id ')' ';'               {% varType $1 >>= classNewCheck $5 >>= \s -> return (NodeNew $1 s) } 
 
 E2 : E '+' E                            { NodeArmc '+' $1 $3 }
    | E '-' E                            { NodeArmc '-' $1 $3 }
