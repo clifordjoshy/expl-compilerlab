@@ -6,6 +6,7 @@ import Control.Monad.State (MonadState (get, put), State)
 import Data.Bifunctor (second)
 import Data.List (isPrefixOf)
 import qualified Data.Map as Map
+import Data.Maybe (isJust)
 import DefTables
 import SymbolTable
 import SyntaxTree
@@ -63,7 +64,13 @@ insertCTable attrs mets = do
           Nothing -> error $ "Cannot find parent class " ++ pName
         Nothing -> Class {size = 0, st = Map.empty}
 
-      (cSymTable, cSize) = genClassSymbolTable cName (attrs ++ mets) pSize pSyms
+      -- if class type, convert all U in attrs to UC
+      toUc (t, d) = case d of
+        U n -> (t, UC n)
+        x -> (t, x)
+      mappedAttrs = map toUc attrs
+
+      (cSymTable, cSize) = genClassSymbolTable cName (mappedAttrs ++ mets) pSize pSyms
 
       -- add current class to class table (temporarily) (for recursive decl)
       ct2 = Map.insertWith (error "Non-unique class name") cName Class {} ct
@@ -84,8 +91,19 @@ endCurClass = do
 saveGTable :: [(String, [SymbolBase])] -> State ParserState Int
 saveGTable decls = do
   s@ParserState {tTable = tt, cTable = ct} <- get
-  let (gSymTable, spInc) = genGSymbolTable decls
-  let gSymTableV = verifyGSymTable gSymTable tt ct
+  let startAddr = 4096 + (8 * Map.size ct)
+
+      -- if class type, convert all U in decl to UC
+      toUc d = case d of
+        U n -> UC n
+        x -> x
+      gMap d@(t, ss) = case Map.lookup t ct of
+        Nothing -> d
+        Just _ -> (t, map toUc ss)
+      mappedDecls = map gMap decls
+
+      (gSymTable, spInc) = genGSymbolTable mappedDecls startAddr
+      gSymTableV = verifyGSymTable gSymTable tt ct
   put s {gTable = gSymTableV}
   -- stack pointer should be pointing to the last used location
   return $ spInc - 1
@@ -97,7 +115,7 @@ saveLTable decls = do
   let (Func _ argsB _) = cFn
       (ttCheck, args) = case cClass of
         Nothing -> (tt, argsB)
-        Just (cName, _) -> (Map.insert cName [] tt, (cName, "self") : argsB)
+        Just (cName, _) -> (Map.insert cName [] tt, (cName, "self") : (cName, "self+") : argsB)
       lSymTable = genLSymbolTable decls
       argSymTable = genArgSymbolTable args
       localSymbols = Map.unionWith (error "Args and local variables have same name") lSymTable argSymTable
@@ -232,10 +250,17 @@ retTypeCheck t = do
   let (Func td _ _) = cFn
   if t `tEq` td then return () else error $ "Function returns " ++ t ++ " instead of " ++ td
 
-assignTypeCheck :: SyntaxTree -> String -> State ParserState ()
+assignTypeCheck :: SyntaxTree -> String -> State ParserState (SyntaxTree -> SyntaxTree -> SyntaxTree)
 assignTypeCheck n tc = do
+  ParserState {cTable = ct} <- get
+  let isClassVar = isJust (Map.lookup tc ct)
   t <- varType n
-  if t `tEq` tc then return () else error $ "Cannot assign " ++ tc ++ " to " ++ t
+  let retVal
+        | t `tEq` tc = NodeAssign
+        | isClassVar && isAncestor ct t tc = NodeAssignC tc
+        | otherwise = error $ "Cannot assign " ++ tc ++ " to " ++ t
+
+  return retVal
 
 userTypeSize :: String -> State ParserState Int
 userTypeSize tName = do

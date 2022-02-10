@@ -68,8 +68,8 @@ genCallXsm lbl = "CALL " ++ lbl ++ "\n"
 genRetXsm :: String
 genRetXsm = "RET\n"
 
-genIncSpXsm :: String
-genIncSpXsm = "INR SP\n"
+genIncXsm :: String -> String
+genIncXsm r = "INR " ++ r ++ "\n"
 
 -- | Generates xsm for a fn call
 -- | usedRegs -> FunctionLabel(accessed) -> [code for pushing each arg] -> returnReg -> Code
@@ -77,7 +77,7 @@ genFnCallXsm :: [String] -> String -> [String] -> String -> String
 genFnCallXsm usedRegs fnLabel argCodes returnReg =
   pushRegCode
     ++ pushArgCode
-    ++ genIncSpXsm
+    ++ genIncXsm "SP"
     ++ genCallXsm fnLabel
     ++ genStackXsm POP returnReg
     ++ popArgCode
@@ -100,6 +100,6 @@ genLibXsm usedRegs fnCode (a1, a2, a3) retReg = genFnCallXsm usedRegs "0" argCod
       (ValInt val) -> genMovXsm retReg (show val) ++ genStackXsm PUSH retReg
       (ValString val) -> genMovXsm retReg (show val) ++ genStackXsm PUSH retReg
       (Reg r) -> genStackXsm PUSH r
-      None -> genIncSpXsm
+      None -> genIncXsm "SP"
     fnCodeCode = genMovXsm retReg (show fnCode) ++ genStackXsm PUSH retReg
     argCodes = [fnCodeCode, evalArg a1, evalArg a2, evalArg a3]

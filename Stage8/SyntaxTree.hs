@@ -24,11 +24,12 @@ data SyntaxTree
   | NodeWrite SyntaxTree
   | NodeInitialize
   | NodeAlloc SyntaxTree Int -- AllocVar, AllocSize
-  | NodeNew SyntaxTree Int
+  | NodeNew SyntaxTree Int String -- AllocVar, Size, FnTableIndex
   | NodeFree SyntaxTree
   | NodeArmc Char SyntaxTree SyntaxTree
   | NodeBool String SyntaxTree SyntaxTree
   | NodeAssign SyntaxTree SyntaxTree
+  | NodeAssignC String SyntaxTree SyntaxTree -- for class inst assignment(rClass, left, right)
   | NodeConn SyntaxTree SyntaxTree
   | NodeIf SyntaxTree SyntaxTree
   | NodeIfElse SyntaxTree SyntaxTree SyntaxTree
@@ -87,13 +88,14 @@ toDataTree t = case t of
   NodeBool c l r -> Node ("Boolean " ++ c) [toDataTree l, toDataTree r]
   NodeConn l r -> Node "NodeConn" [toDataTree l, toDataTree r]
   NodeAssign l r -> Node "Assign" [toDataTree l, toDataTree r]
+  NodeAssignC c l r -> Node ("Assign" ++ c) [toDataTree l, toDataTree r]
   NodeIf cond bl -> Node "If" [toDataTree cond, toDataTree bl]
   NodeIfElse cond bl1 bl2 -> Node "If Else" [toDataTree cond, toDataTree bl1, toDataTree bl2]
   NodeWhile cond bl -> Node "While" [toDataTree cond, toDataTree bl]
   NodeRead t -> Node "Read" [toDataTree t]
   NodeWrite t -> Node "Write" [toDataTree t]
-  NodeAlloc t s -> Node ("Alloc " ++ show s) [toDataTree t]
-  NodeNew t s -> Node ("Free " ++ show s) [toDataTree t]
+  NodeAlloc t s -> Node "Alloc" [toDataTree t]
+  NodeNew t s c -> Node ("New " ++ c ++ " ") [toDataTree t]
   NodeFree t -> Node "Free" [toDataTree t]
   _ -> Node (show t) []
 

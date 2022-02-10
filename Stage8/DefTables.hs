@@ -2,6 +2,7 @@ module DefTables where
 
 import Data.List
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import SymbolTable
 
 type Field = (String, String) -- TypeName, VarName
@@ -16,6 +17,8 @@ data CTableEntry = Class
   deriving (Show)
 
 type ClassTable = Map.Map String CTableEntry
+
+type FnTableList = [(String, [String])] -- className, [fnLabels]
 
 -- | Check if a list of dot access is valid on a given type and returns final type
 -- | TypeTable -> startType -> [DotList] -> FinalType
@@ -95,3 +98,29 @@ isAncestor ct a b
   | otherwise = case parent (ct Map.! b) of
     Just p -> isAncestor ct a p
     Nothing -> False
+
+ftlHelper :: String -> ClassTable -> Map.Map String [(String, String)] -> (Map.Map String [(String, String)], ClassTable)
+ftlHelper cName toPcs pcsd = (pcsd3, toPcs3)
+  where
+    Class {parent = cParent, st = cst} = toPcs Map.! cName
+    metList :: [(String, String)]
+    metList = Map.toList $ Map.mapMaybe (\sym -> if isFunc sym then Just (getFuncLabel sym) else Nothing) cst
+
+    orderMetList :: [(String, String)] -> [(String, String)]
+    orderMetList pMets = sortOn (\(n, _) -> fromMaybe 8 (findIndex ((n ==) . fst) pMets)) metList
+
+    (pcsd2, toPcs2) = case cParent of
+      Nothing -> (Map.insert cName metList pcsd, Map.delete cName toPcs)
+      Just pName -> case Map.lookup pName pcsd of
+        Just pMets -> (Map.insert cName (orderMetList pMets) pcsd, Map.delete cName toPcs)
+        Nothing -> ftlHelper pName toPcs pcsd
+
+    (pcsd3, toPcs3)
+      | Map.null toPcs2 = (pcsd2, toPcs2)
+      | otherwise = ftlHelper (fst $ Map.findMin toPcs2) toPcs2 pcsd2
+
+-- Generates function table list such that all the inherited method decls come first in the order of declarations in parent
+genFtl :: ClassTable -> FnTableList
+genFtl ct = Map.toList $ Map.map (map snd) mListi
+  where
+    (mListi, _) = ftlHelper (fst $ Map.findMin ct) ct Map.empty

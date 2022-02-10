@@ -191,7 +191,7 @@ RVal : Variable                         {% varType $1 >>= \t -> return (t, $1) }
 Slist : Slist Stmt                      { NodeConn $1 $2 }
       | Stmt                            { $1 }
 
-Stmt : Variable '=' RVal ';'                         {% let (t, v) = $3 in (assignTypeCheck $1 t >> return (NodeAssign $1 v)) } 
+Stmt : Variable '=' RVal ';'                         {% let (t, v) = $3 in (assignTypeCheck $1 t >>= \node -> return (node $1 v)) } 
      | IF '(' B ')' THEN Slist ENDIF ';'             { NodeIf $3 $6 }
      | IF '(' B ')' THEN Slist ELSE Slist ENDIF ';'  { NodeIfElse $3 $6 $8 }
      | WHILE '(' B ')' DO Slist ENDWHILE ';'         { NodeWhile $3 $6 }
@@ -199,7 +199,7 @@ Stmt : Variable '=' RVal ';'                         {% let (t, v) = $3 in (assi
      | CONTINUE ';'                                  { NodeCont }
      | FnCall ';'                                    { $1 }
      | Variable '=' ALLOC '(' ')' ';'                {% varType $1 >>= userTypeSize >>= \s -> return (NodeAlloc $1 s) }
-     | Variable '=' NEW '(' id ')' ';'               {% varType $1 >>= classNewCheck $5 >>= \s -> return (NodeNew $1 s) } 
+     | Variable '=' NEW '(' id ')' ';'               {% varType $1 >>= classNewCheck $5 >>= \s -> return (NodeNew $1 s $5) } 
 
 E2 : E '+' E                            { NodeArmc '+' $1 $3 }
    | E '-' E                            { NodeArmc '-' $1 $3 }

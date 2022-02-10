@@ -8,6 +8,7 @@ import qualified Data.Map as Map
 -- | Type used in the Grammar file for making the variable list
 data SymbolBase
   = U String
+  | UC String
   | A String Int
   | A2 String Int Int
   | P String
@@ -72,13 +73,14 @@ findSymbolType name lst gst = case Map.lookup name lst of
   Just (t, _) -> t
   Nothing -> getSymbolType (gst Map.! name)
 
--- | Base declarations -> typetable -> startAddress -> mapFunction -> errorMsg -> (SymbolTable, Size)
+-- | Base declarations -> startAddress -> mapFunction -> errorMsg -> (SymbolTable, NextAddr)
 symbolTableHelper :: forall tVal. [(String, [SymbolBase])] -> Int -> (String -> SymbolBase -> Int -> (String, tVal)) -> String -> (Map.Map String tVal, Int)
-symbolTableHelper decls sa toTableEntry eMsg = (Map.fromListWith (error eMsg) symList, size)
+symbolTableHelper decls sa toTableEntry eMsg = (Map.fromListWith (error eMsg) symList, nextAddr)
   where
     getBaseSize :: SymbolBase -> String -> Int
     getBaseSize b t = case b of
       U _ -> 1
+      UC _ -> 2
       A _ n -> n
       A2 _ n1 n2 -> n1 * n2
       P _ -> 1
@@ -87,11 +89,12 @@ symbolTableHelper decls sa toTableEntry eMsg = (Map.fromListWith (error eMsg) sy
     getLineSyms :: Int -> (String, [SymbolBase]) -> (Int, [(String, tVal)])
     getLineSyms addrInit (t, vars) = mapAccumL (\a b -> (a + getBaseSize b t, toTableEntry t b a)) addrInit vars
 
-    (size, symList) = let (s, l) = mapAccumL getLineSyms sa decls in (s, concat l)
+    (nextAddr, symList) = let (s, l) = mapAccumL getLineSyms sa decls in (s, concat l)
 
 toGEntry :: String -> SymbolBase -> Int -> (String, Symbol)
 toGEntry t v a = case v of
   U name -> (name, Unit t a)
+  UC name -> (name, Unit t a)
   A name s -> (name, Arr t s a)
   A2 name s1 s2 -> (name, Arr2 t s1 s2 a)
   P name -> (name, Unit (t ++ "*") a)
@@ -103,9 +106,9 @@ toGEntry t v a = case v of
       P n -> (t ++ "*", n)
       _ -> error "Not a valid param"
 
--- | Array of decls ("type": [SymbolBase]) -> (GSymbolTable, size)
-genGSymbolTable :: [(String, [SymbolBase])] -> (GSymbolTable, Int)
-genGSymbolTable decls = symbolTableHelper decls 4096 toGEntry eMsg
+-- | Array of decls ("type": [SymbolBase]) -> Start Address -> (GSymbolTable, Sp)
+genGSymbolTable :: [(String, [SymbolBase])] -> Int -> (GSymbolTable, Int)
+genGSymbolTable decls startAddr = symbolTableHelper decls startAddr toGEntry eMsg
   where
     eMsg = "Non-unique global declaration"
 
