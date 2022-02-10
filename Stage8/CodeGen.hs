@@ -242,8 +242,8 @@ genCode a@Args {node = (NodeAssign (LeafVar var varResolver) r)} = (code, "", re
 genCode a@Args {node = (NodeAssignC cName (LeafVar v1 re1) (LeafVar v2 re2))} = (code, "", regsFree, labels)
   where
     Args {regsFree = regsFree, labels = labels, gSymTable = gst, fnTableList = ftl} = a
-    (rCode, rReg, regs2) = genAddrResolveCode v1 re1 a
-    (lCode, lReg, regs3) = genAddrResolveCode v2 re2 a {regsFree = regs2}
+    (rCode, rReg, regs2) = genAddrResolveCode v2 re2 a
+    (lCode, lReg, regs3) = genAddrResolveCode v1 re1 a {regsFree = regs2}
     (tempReg, _) = getReg regs3
     mvVals l r = genMovXsm tempReg (accessMem r) ++ genMovXsm (accessMem l) tempReg
     code = rCode ++ lCode ++ mvVals lReg rReg ++ genIncXsm lReg ++ genIncXsm rReg ++ mvVals lReg rReg

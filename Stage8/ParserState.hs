@@ -256,8 +256,8 @@ assignTypeCheck n tc = do
   let isClassVar = isJust (Map.lookup tc ct)
   t <- varType n
   let retVal
-        | t `tEq` tc = NodeAssign
         | isClassVar && isAncestor ct t tc = NodeAssignC tc
+        | t `tEq` tc = NodeAssign
         | otherwise = error $ "Cannot assign " ++ tc ++ " to " ++ t
 
   return retVal

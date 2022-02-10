@@ -21,6 +21,7 @@ main = do
   let (cTable, cfDecls, gTable, sp, fDecl) = parseTokens (scanTokens fileContents)
   -- print cTable
   -- print cfDecls
+  -- print gTable
 
   -- let (_, "main", _, _, mainAst) = last fDecl in putStr $ prettyPrint mainAst
   let code = codeGen gTable sp cTable cfDecls fDecl

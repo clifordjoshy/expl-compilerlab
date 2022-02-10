@@ -88,7 +88,7 @@ toDataTree t = case t of
   NodeBool c l r -> Node ("Boolean " ++ c) [toDataTree l, toDataTree r]
   NodeConn l r -> Node "NodeConn" [toDataTree l, toDataTree r]
   NodeAssign l r -> Node "Assign" [toDataTree l, toDataTree r]
-  NodeAssignC c l r -> Node ("Assign" ++ c) [toDataTree l, toDataTree r]
+  NodeAssignC c l r -> Node ("AssignInstance " ++ c) [toDataTree l, toDataTree r]
   NodeIf cond bl -> Node "If" [toDataTree cond, toDataTree bl]
   NodeIfElse cond bl1 bl2 -> Node "If Else" [toDataTree cond, toDataTree bl1, toDataTree bl2]
   NodeWhile cond bl -> Node "While" [toDataTree cond, toDataTree bl]
