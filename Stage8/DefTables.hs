@@ -123,4 +123,6 @@ ftlHelper cName toPcs pcsd = (pcsd3, toPcs3)
 genFtl :: ClassTable -> FnTableList
 genFtl ct = Map.toList $ Map.map (map snd) mListi
   where
-    (mListi, _) = ftlHelper (fst $ Map.findMin ct) ct Map.empty
+    (mListi, _) 
+      | Map.null ct = (Map.empty, Map.empty)
+      | otherwise = ftlHelper (fst $ Map.findMin ct) ct Map.empty
